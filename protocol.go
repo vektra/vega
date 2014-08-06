@@ -1,8 +1,4 @@
-package messages
-
-type Message struct {
-	Body []byte
-}
+package mailbox
 
 type MessageType int
 

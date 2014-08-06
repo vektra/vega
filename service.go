@@ -7,20 +7,11 @@ import (
 	"time"
 
 	"github.com/ugorji/go/codec"
-
-	messages "./messages"
 )
 
 var msgpack codec.MsgpackHandle
 
 var EProtocolError = errors.New("protocol error")
-
-type Storage interface {
-	Declare(string) error
-	Push(string, []byte) error
-	Poll(string) ([]byte, bool)
-	LongPoll(string, time.Duration) ([]byte, bool)
-}
 
 type Service struct {
 	Address  string
@@ -70,9 +61,9 @@ func (s *Service) handle(c net.Conn) {
 			return
 		}
 
-		switch messages.MessageType(buf[0]) {
-		case messages.DeclareType:
-			msg := &messages.Declare{}
+		switch MessageType(buf[0]) {
+		case DeclareType:
+			msg := &Declare{}
 			dec := codec.NewDecoder(c, &msgpack)
 
 			err = dec.Decode(msg)
@@ -81,8 +72,8 @@ func (s *Service) handle(c net.Conn) {
 			}
 
 			err = s.handleDeclare(c, msg)
-		case messages.PollType:
-			msg := &messages.Poll{}
+		case PollType:
+			msg := &Poll{}
 			dec := codec.NewDecoder(c, &msgpack)
 
 			err = dec.Decode(msg)
@@ -91,8 +82,8 @@ func (s *Service) handle(c net.Conn) {
 			}
 
 			err = s.handlePoll(c, msg)
-		case messages.LongPollType:
-			msg := &messages.LongPoll{}
+		case LongPollType:
+			msg := &LongPoll{}
 			dec := codec.NewDecoder(c, &msgpack)
 
 			err = dec.Decode(msg)
@@ -101,8 +92,8 @@ func (s *Service) handle(c net.Conn) {
 			}
 
 			err = s.handleLongPoll(c, msg)
-		case messages.PushType:
-			msg := &messages.Push{}
+		case PushType:
+			msg := &Push{}
 			dec := codec.NewDecoder(c, &msgpack)
 
 			err = dec.Decode(msg)
@@ -116,11 +107,11 @@ func (s *Service) handle(c net.Conn) {
 		}
 
 		if err != nil {
-			c.Write([]byte{uint8(messages.ErrorType)})
+			c.Write([]byte{uint8(ErrorType)})
 
 			enc := codec.NewEncoder(c, &msgpack)
 
-			err = enc.Encode(&messages.Error{err.Error()})
+			err = enc.Encode(&Error{err.Error()})
 			if err != nil {
 				panic(err)
 			}
@@ -128,54 +119,54 @@ func (s *Service) handle(c net.Conn) {
 	}
 }
 
-func (s *Service) handleDeclare(c net.Conn, msg *messages.Declare) error {
+func (s *Service) handleDeclare(c net.Conn, msg *Declare) error {
 	err := s.Registry.Declare(msg.Name)
 	if err != nil {
 		return err
 	}
 
-	c.Write([]byte{uint8(messages.SuccessType)})
+	c.Write([]byte{uint8(SuccessType)})
 	return nil
 }
 
-func (s *Service) handlePoll(c net.Conn, msg *messages.Poll) error {
-	var ret messages.PollResult
+func (s *Service) handlePoll(c net.Conn, msg *Poll) error {
+	var ret PollResult
 
 	val, ok := s.Registry.Poll(msg.Name)
 	if ok {
-		ret.Message = &messages.Message{Body: val}
+		ret.Message = val
 	}
 
-	c.Write([]byte{uint8(messages.PollResultType)})
+	c.Write([]byte{uint8(PollResultType)})
 	enc := codec.NewEncoder(c, &msgpack)
 	return enc.Encode(&ret)
 }
 
-func (s *Service) handleLongPoll(c net.Conn, msg *messages.LongPoll) error {
+func (s *Service) handleLongPoll(c net.Conn, msg *LongPoll) error {
 	dur, err := time.ParseDuration(msg.Duration)
 	if err != nil {
 		return err
 	}
 
-	var ret messages.PollResult
+	var ret PollResult
 
 	val, ok := s.Registry.LongPoll(msg.Name, dur)
 	if ok {
-		ret.Message = &messages.Message{Body: val}
+		ret.Message = val
 	}
 
-	c.Write([]byte{uint8(messages.PollResultType)})
+	c.Write([]byte{uint8(PollResultType)})
 	enc := codec.NewEncoder(c, &msgpack)
 	return enc.Encode(&ret)
 }
 
-func (s *Service) handlePush(c net.Conn, msg *messages.Push) error {
-	err := s.Registry.Push(msg.Name, msg.Message.Body)
+func (s *Service) handlePush(c net.Conn, msg *Push) error {
+	err := s.Registry.Push(msg.Name, msg.Message)
 	if err != nil {
 		return err
 	}
 
-	c.Write([]byte{uint8(messages.SuccessType)})
+	c.Write([]byte{uint8(SuccessType)})
 	return nil
 }
 
@@ -197,11 +188,11 @@ func (c *Client) Close() error {
 }
 
 func (c *Client) Declare(name string) error {
-	c.conn.Write([]byte{uint8(messages.DeclareType)})
+	c.conn.Write([]byte{uint8(DeclareType)})
 
 	enc := codec.NewEncoder(c.conn, &msgpack)
 
-	msg := messages.Declare{
+	msg := Declare{
 		Name: name,
 	}
 
@@ -217,9 +208,9 @@ func (c *Client) Declare(name string) error {
 		return err
 	}
 
-	switch messages.MessageType(buf[0]) {
-	case messages.ErrorType:
-		var msgerr messages.Error
+	switch MessageType(buf[0]) {
+	case ErrorType:
+		var msgerr Error
 
 		err = codec.NewDecoder(c.conn, &msgpack).Decode(&msgerr)
 		if err != nil {
@@ -227,19 +218,19 @@ func (c *Client) Declare(name string) error {
 		}
 
 		return errors.New(msgerr.Error)
-	case messages.SuccessType:
+	case SuccessType:
 		return nil
 	default:
 		return EProtocolError
 	}
 }
 
-func (c *Client) Poll(name string) (*messages.Message, error) {
-	c.conn.Write([]byte{uint8(messages.PollType)})
+func (c *Client) Poll(name string) (*Message, error) {
+	c.conn.Write([]byte{uint8(PollType)})
 
 	enc := codec.NewEncoder(c.conn, &msgpack)
 
-	msg := messages.Poll{
+	msg := Poll{
 		Name: name,
 	}
 
@@ -254,9 +245,9 @@ func (c *Client) Poll(name string) (*messages.Message, error) {
 		return nil, err
 	}
 
-	switch messages.MessageType(buf[0]) {
-	case messages.ErrorType:
-		var msgerr messages.Error
+	switch MessageType(buf[0]) {
+	case ErrorType:
+		var msgerr Error
 
 		err = codec.NewDecoder(c.conn, &msgpack).Decode(&msgerr)
 		if err != nil {
@@ -264,10 +255,10 @@ func (c *Client) Poll(name string) (*messages.Message, error) {
 		}
 
 		return nil, errors.New(msgerr.Error)
-	case messages.PollResultType:
+	case PollResultType:
 		dec := codec.NewDecoder(c.conn, &msgpack)
 
-		var res messages.PollResult
+		var res PollResult
 
 		if err := dec.Decode(&res); err != nil {
 			return nil, err
@@ -279,12 +270,12 @@ func (c *Client) Poll(name string) (*messages.Message, error) {
 	}
 }
 
-func (c *Client) LongPoll(name string, til time.Duration) (*messages.Message, error) {
-	c.conn.Write([]byte{uint8(messages.LongPollType)})
+func (c *Client) LongPoll(name string, til time.Duration) (*Message, error) {
+	c.conn.Write([]byte{uint8(LongPollType)})
 
 	enc := codec.NewEncoder(c.conn, &msgpack)
 
-	msg := messages.LongPoll{
+	msg := LongPoll{
 		Name:     name,
 		Duration: til.String(),
 	}
@@ -300,9 +291,9 @@ func (c *Client) LongPoll(name string, til time.Duration) (*messages.Message, er
 		return nil, err
 	}
 
-	switch messages.MessageType(buf[0]) {
-	case messages.ErrorType:
-		var msgerr messages.Error
+	switch MessageType(buf[0]) {
+	case ErrorType:
+		var msgerr Error
 
 		err = codec.NewDecoder(c.conn, &msgpack).Decode(&msgerr)
 		if err != nil {
@@ -310,10 +301,10 @@ func (c *Client) LongPoll(name string, til time.Duration) (*messages.Message, er
 		}
 
 		return nil, errors.New(msgerr.Error)
-	case messages.PollResultType:
+	case PollResultType:
 		dec := codec.NewDecoder(c.conn, &msgpack)
 
-		var res messages.PollResult
+		var res PollResult
 
 		if err := dec.Decode(&res); err != nil {
 			return nil, err
@@ -326,13 +317,13 @@ func (c *Client) LongPoll(name string, til time.Duration) (*messages.Message, er
 }
 
 func (c *Client) Push(name string, body []byte) error {
-	c.conn.Write([]byte{uint8(messages.PushType)})
+	c.conn.Write([]byte{uint8(PushType)})
 
 	enc := codec.NewEncoder(c.conn, &msgpack)
 
-	msg := messages.Push{
+	msg := Push{
 		Name:    name,
-		Message: &messages.Message{body},
+		Message: &Message{body},
 	}
 
 	if err := enc.Encode(&msg); err != nil {
@@ -346,9 +337,9 @@ func (c *Client) Push(name string, body []byte) error {
 		return err
 	}
 
-	switch messages.MessageType(buf[0]) {
-	case messages.ErrorType:
-		var msgerr messages.Error
+	switch MessageType(buf[0]) {
+	case ErrorType:
+		var msgerr Error
 
 		err = codec.NewDecoder(c.conn, &msgpack).Decode(&msgerr)
 		if err != nil {
@@ -356,7 +347,7 @@ func (c *Client) Push(name string, body []byte) error {
 		}
 
 		return errors.New(msgerr.Error)
-	case messages.SuccessType:
+	case SuccessType:
 		return nil
 	default:
 		return EProtocolError

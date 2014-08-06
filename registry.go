@@ -18,7 +18,7 @@ func registry() *Registry {
 	}
 }
 
-func (r *Registry) Poll(name string) ([]byte, bool) {
+func (r *Registry) Poll(name string) (*Message, bool) {
 	r.Lock()
 	defer r.Unlock()
 
@@ -29,7 +29,7 @@ func (r *Registry) Poll(name string) ([]byte, bool) {
 	return nil, false
 }
 
-func (r *Registry) LongPoll(name string, til time.Duration) ([]byte, bool) {
+func (r *Registry) LongPoll(name string, til time.Duration) (*Message, bool) {
 	r.Lock()
 
 	mailbox, ok := r.mailboxes[name]
@@ -61,7 +61,7 @@ func (r *Registry) LongPoll(name string, til time.Duration) ([]byte, bool) {
 
 var ENoMailbox = errors.New("No such mailbox available")
 
-func (r *Registry) Push(name string, value []byte) error {
+func (r *Registry) Push(name string, value *Message) error {
 	r.Lock()
 	defer r.Unlock()
 

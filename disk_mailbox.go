@@ -35,7 +35,7 @@ type diskMailbox struct {
 
 	disk     *diskStorage
 	prefix   []byte
-	watchers []chan []byte
+	watchers []chan *Message
 }
 
 func (d *diskStorage) Mailbox(name string) Mailbox {
@@ -50,7 +50,7 @@ type mailboxHeader struct {
 	ReadIndex, WriteIndex, Size int
 }
 
-func (m *diskMailbox) Poll() ([]byte, bool) {
+func (m *diskMailbox) Poll() (*Message, bool) {
 	m.Lock()
 	defer m.Unlock()
 
@@ -101,10 +101,10 @@ func (m *diskMailbox) Poll() ([]byte, bool) {
 		panic(err)
 	}
 
-	return data, true
+	return DecodeMessage(data), true
 }
 
-func (m *diskMailbox) Push(value []byte) error {
+func (m *diskMailbox) Push(value *Message) error {
 	m.Lock()
 	defer m.Unlock()
 
@@ -132,7 +132,7 @@ func (m *diskMailbox) Push(value []byte) error {
 
 	wo := levigo.NewWriteOptions()
 
-	err = db.Put(wo, key, value)
+	err = db.Put(wo, key, value.AsBytes())
 	if err != nil {
 		return err
 	}
@@ -153,11 +153,11 @@ func (m *diskMailbox) Push(value []byte) error {
 	return nil
 }
 
-func (mm *diskMailbox) AddWatcher() <-chan []byte {
+func (mm *diskMailbox) AddWatcher() <-chan *Message {
 	mm.Lock()
 	defer mm.Unlock()
 
-	indicator := make(chan []byte, 1)
+	indicator := make(chan *Message, 1)
 
 	mm.watchers = append(mm.watchers, indicator)
 

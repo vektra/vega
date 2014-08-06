@@ -5,8 +5,6 @@ import (
 	"sync"
 	"testing"
 	"time"
-
-	messages "./messages"
 )
 
 const cPort = "127.0.0.1:34000"
@@ -84,7 +82,7 @@ func TestServiceLongPoll(t *testing.T) {
 
 	c1.Declare("a")
 
-	var got *messages.Message
+	var got *Message
 
 	var wg sync.WaitGroup
 

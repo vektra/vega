@@ -1,7 +1,6 @@
 package mailbox
 
 import (
-	"bytes"
 	"sync"
 	"testing"
 	"time"
@@ -16,7 +15,7 @@ func TestRegistryPoll(t *testing.T) {
 		t.Fatal("An empty mailbox has values")
 	}
 
-	msg := []byte("hello")
+	msg := Msg([]byte("hello"))
 
 	r.Declare("a")
 	r.Push("a", msg)
@@ -27,7 +26,7 @@ func TestRegistryPoll(t *testing.T) {
 		t.Fatal("The mailbox did not get the value")
 	}
 
-	if !bytes.Equal(msg, ret) {
+	if !msg.Equal(ret) {
 		t.Fatal("Wrong value")
 	}
 }
@@ -35,11 +34,11 @@ func TestRegistryPoll(t *testing.T) {
 func TestLongPollRegistry(t *testing.T) {
 	r := registry()
 
-	msg := []byte("hello")
+	msg := Msg([]byte("hello"))
 
 	r.Declare("a")
 
-	var got []byte
+	var got *Message
 
 	var wg sync.WaitGroup
 
@@ -57,7 +56,7 @@ func TestLongPollRegistry(t *testing.T) {
 
 	wg.Wait()
 
-	if !bytes.Equal(msg, got) {
+	if !msg.Equal(got) {
 		t.Fatal("Wrong value")
 	}
 
@@ -68,7 +67,7 @@ func TestLongPollRegistryTimeout(t *testing.T) {
 
 	r.Declare("a")
 
-	var got []byte
+	var got *Message
 
 	var wg sync.WaitGroup
 

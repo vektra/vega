@@ -1,7 +1,6 @@
 package mailbox
 
 import (
-	"bytes"
 	"io/ioutil"
 	"os"
 	"testing"
@@ -24,12 +23,12 @@ func TestDiskMailboxPush(t *testing.T) {
 
 	m := r.Mailbox("a")
 
-	msg := []byte("hello")
+	msg := Msg([]byte("hello"))
 
 	m.Push(msg)
 
 	out, _ := m.Poll()
-	if !bytes.Equal(out, msg) {
+	if !out.Equal(msg) {
 		t.Fatal("Wrong value")
 	}
 }
@@ -56,7 +55,7 @@ func TestDiskMailboxKeepsStatus(t *testing.T) {
 		t.Fatal("there shouldn't be anything in queue")
 	}
 
-	msg := []byte("hello")
+	msg := Msg([]byte("hello"))
 
 	m.Push(msg)
 
@@ -67,19 +66,19 @@ func TestDiskMailboxKeepsStatus(t *testing.T) {
 		t.Fatal("there shouldn't be anything in the queue")
 	}
 
-	msg2 := []byte("message 2")
-	msg3 := []byte("third message")
+	msg2 := Msg([]byte("message 2"))
+	msg3 := Msg([]byte("third message"))
 
 	m.Push(msg2)
 	m.Push(msg3)
 
 	ret, _ := m.Poll()
-	if !bytes.Equal(ret, msg2) {
+	if !ret.Equal(msg2) {
 		t.Fatal("Unable to pull correct message")
 	}
 
 	ret, _ = m.Poll()
-	if !bytes.Equal(ret, msg3) {
+	if !ret.Equal(msg3) {
 		t.Fatal("Unable to pull correct message")
 	}
 
@@ -110,7 +109,7 @@ func TestDiskMailboxStats(t *testing.T) {
 		t.Fatal("there shouldn't be anything in queue")
 	}
 
-	msg := []byte("hello")
+	msg := Msg([]byte("hello"))
 
 	m.Push(msg)
 
@@ -151,13 +150,13 @@ func TestDiskMailboxWatcher(t *testing.T) {
 
 	watch := m.AddWatcher()
 
-	msg := []byte("hello")
+	msg := Msg([]byte("hello"))
 
 	m.Push(msg)
 
 	select {
 	case ret := <-watch:
-		if !bytes.Equal(ret, msg) {
+		if !ret.Equal(msg) {
 			t.Fatal("wrong message")
 		}
 	default:
@@ -180,7 +179,7 @@ func TestDiskMailboxPersists(t *testing.T) {
 
 	m := r.Mailbox("a")
 
-	msg := []byte("hello")
+	msg := Msg([]byte("hello"))
 
 	m.Push(msg)
 
@@ -197,7 +196,7 @@ func TestDiskMailboxPersists(t *testing.T) {
 
 	ret, _ := m2.Poll()
 
-	if !bytes.Equal(ret, msg) {
+	if !ret.Equal(msg) {
 		t.Fatal("couldn't pull the message out")
 	}
 }

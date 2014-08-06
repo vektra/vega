@@ -35,7 +35,7 @@ func (r *Router) DiscoverEndpoint(name string) (Storage, bool) {
 	return reg, ok
 }
 
-func (r *Router) Push(name string, body []byte) error {
+func (r *Router) Push(name string, body *Message) error {
 	if storage, ok := r.routes.Get(name); ok {
 		storage.Push(name, body)
 		return nil

@@ -1,19 +1,16 @@
 package mailbox
 
-import (
-	"bytes"
-	"testing"
-)
+import "testing"
 
 func TestMailboxPush(t *testing.T) {
 	m := NewMemMailbox()
 
-	msg := []byte("hello")
+	msg := Msg([]byte("hello"))
 
 	m.Push(msg)
 
 	out, _ := m.Poll()
-	if !bytes.Equal(out, msg) {
+	if !out.Equal(msg) {
 		t.Fatal("Wrong value")
 	}
 }
@@ -23,13 +20,13 @@ func TestMailboxWatcher(t *testing.T) {
 
 	watch := m.AddWatcher()
 
-	msg := []byte("hello")
+	msg := Msg([]byte("hello"))
 
 	m.Push(msg)
 
 	select {
 	case ret := <-watch:
-		if !bytes.Equal(ret, msg) {
+		if !ret.Equal(msg) {
 			t.Fatal("wrong message")
 		}
 	default:

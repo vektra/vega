@@ -1,26 +1,15 @@
 package mailbox
 
-type MailboxStats struct {
-	Size int
-}
-
-type Mailbox interface {
-	Push([]byte) error
-	Poll() ([]byte, bool)
-	AddWatcher() <-chan []byte
-	Stats() *MailboxStats
-}
-
 type MemMailbox struct {
-	values   [][]byte
-	watchers []chan []byte
+	values   []*Message
+	watchers []chan *Message
 }
 
 func NewMemMailbox() Mailbox {
 	return &MemMailbox{nil, nil}
 }
 
-func (mm *MemMailbox) Poll() ([]byte, bool) {
+func (mm *MemMailbox) Poll() (*Message, bool) {
 	if len(mm.values) > 0 {
 		val := mm.values[0]
 		mm.values = mm.values[1:]
@@ -30,7 +19,7 @@ func (mm *MemMailbox) Poll() ([]byte, bool) {
 	return nil, false
 }
 
-func (mm *MemMailbox) Push(value []byte) error {
+func (mm *MemMailbox) Push(value *Message) error {
 	if len(mm.watchers) > 0 {
 		watch := mm.watchers[0]
 		mm.watchers = mm.watchers[1:]
@@ -45,8 +34,8 @@ func (mm *MemMailbox) Push(value []byte) error {
 	return nil
 }
 
-func (mm *MemMailbox) AddWatcher() <-chan []byte {
-	indicator := make(chan []byte, 1)
+func (mm *MemMailbox) AddWatcher() <-chan *Message {
+	indicator := make(chan *Message, 1)
 
 	mm.watchers = append(mm.watchers, indicator)
 

@@ -1,9 +1,6 @@
 package mailbox
 
-import (
-	"bytes"
-	"testing"
-)
+import "testing"
 
 func TestRouterAdd(t *testing.T) {
 	r := registry()
@@ -29,7 +26,7 @@ func TestRouterPush(t *testing.T) {
 	d := testRouter()
 	d.Add("a", r)
 
-	msg := []byte("hello")
+	msg := Msg([]byte("hello"))
 
 	err := d.Push("a", msg)
 	if err != nil {
@@ -38,7 +35,7 @@ func TestRouterPush(t *testing.T) {
 
 	res, _ := r.Poll("a")
 
-	if !bytes.Equal(res, msg) {
+	if !res.Equal(msg) {
 		t.Fatal("router didn't route")
 	}
 }
