@@ -50,8 +50,12 @@ func TestDiskMailboxKeepsStatus(t *testing.T) {
 
 	m := r.Mailbox("a")
 
-	_, ok := m.Poll()
-	if ok {
+	v, err := m.Poll()
+	if err != nil {
+		panic(err)
+	}
+
+	if v != nil {
 		t.Fatal("there shouldn't be anything in queue")
 	}
 
@@ -61,8 +65,12 @@ func TestDiskMailboxKeepsStatus(t *testing.T) {
 
 	m.Poll()
 
-	_, ok = m.Poll()
-	if ok {
+	v, err = m.Poll()
+	if err != nil {
+		panic(err)
+	}
+
+	if v != nil {
 		t.Fatal("there shouldn't be anything in the queue")
 	}
 
@@ -82,8 +90,8 @@ func TestDiskMailboxKeepsStatus(t *testing.T) {
 		t.Fatal("Unable to pull correct message")
 	}
 
-	_, ok = m.Poll()
-	if ok {
+	ret, _ = m.Poll()
+	if ret != nil {
 		t.Fatal("there shouldn't be anything in the queue")
 	}
 }

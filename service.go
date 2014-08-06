@@ -20,7 +20,7 @@ type Service struct {
 	listener net.Listener
 }
 
-func NewService(addr string) (*Service, error) {
+func NewService(addr string, reg Storage) (*Service, error) {
 	l, err := net.Listen("tcp", addr)
 
 	if err != nil {
@@ -29,9 +29,13 @@ func NewService(addr string) (*Service, error) {
 
 	return &Service{
 		Address:  addr,
-		Registry: registry(),
+		Registry: reg,
 		listener: l,
 	}, nil
+}
+
+func NewMemService(addr string) (*Service, error) {
+	return NewService(addr, NewMemRegistry())
 }
 
 func (s *Service) Close() error {
@@ -132,10 +136,12 @@ func (s *Service) handleDeclare(c net.Conn, msg *Declare) error {
 func (s *Service) handlePoll(c net.Conn, msg *Poll) error {
 	var ret PollResult
 
-	val, ok := s.Registry.Poll(msg.Name)
-	if ok {
-		ret.Message = val
+	val, err := s.Registry.Poll(msg.Name)
+	if err != nil {
+		return err
 	}
+
+	ret.Message = val
 
 	c.Write([]byte{uint8(PollResultType)})
 	enc := codec.NewEncoder(c, &msgpack)
@@ -143,6 +149,8 @@ func (s *Service) handlePoll(c net.Conn, msg *Poll) error {
 }
 
 func (s *Service) handleLongPoll(c net.Conn, msg *LongPoll) error {
+	debugf("handleLongPoll for %#v\n", s.Registry)
+
 	dur, err := time.ParseDuration(msg.Duration)
 	if err != nil {
 		return err
@@ -150,10 +158,12 @@ func (s *Service) handleLongPoll(c net.Conn, msg *LongPoll) error {
 
 	var ret PollResult
 
-	val, ok := s.Registry.LongPoll(msg.Name, dur)
-	if ok {
-		ret.Message = val
+	val, err := s.Registry.LongPoll(msg.Name, dur)
+	if err != nil {
+		return err
 	}
+
+	ret.Message = val
 
 	c.Write([]byte{uint8(PollResultType)})
 	enc := codec.NewEncoder(c, &msgpack)
@@ -161,6 +171,8 @@ func (s *Service) handleLongPoll(c net.Conn, msg *LongPoll) error {
 }
 
 func (s *Service) handlePush(c net.Conn, msg *Push) error {
+	debugf("handlePush for %#v\n", msg)
+
 	err := s.Registry.Push(msg.Name, msg.Message)
 	if err != nil {
 		return err
@@ -316,14 +328,14 @@ func (c *Client) LongPoll(name string, til time.Duration) (*Message, error) {
 	}
 }
 
-func (c *Client) Push(name string, body []byte) error {
+func (c *Client) Push(name string, body *Message) error {
 	c.conn.Write([]byte{uint8(PushType)})
 
 	enc := codec.NewEncoder(c.conn, &msgpack)
 
 	msg := Push{
 		Name:    name,
-		Message: &Message{body},
+		Message: body,
 	}
 
 	if err := enc.Encode(&msg); err != nil {

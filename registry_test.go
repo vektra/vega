@@ -7,11 +7,11 @@ import (
 )
 
 func TestRegistryPoll(t *testing.T) {
-	r := registry()
+	r := NewMemRegistry()
 
-	_, ok := r.Poll("a")
+	v, _ := r.Poll("a")
 
-	if ok {
+	if v != nil {
 		t.Fatal("An empty mailbox has values")
 	}
 
@@ -20,9 +20,9 @@ func TestRegistryPoll(t *testing.T) {
 	r.Declare("a")
 	r.Push("a", msg)
 
-	ret, ok := r.Poll("a")
+	ret, _ := r.Poll("a")
 
-	if !ok {
+	if ret == nil {
 		t.Fatal("The mailbox did not get the value")
 	}
 
@@ -32,7 +32,7 @@ func TestRegistryPoll(t *testing.T) {
 }
 
 func TestLongPollRegistry(t *testing.T) {
-	r := registry()
+	r := NewMemRegistry()
 
 	msg := Msg([]byte("hello"))
 
@@ -63,7 +63,7 @@ func TestLongPollRegistry(t *testing.T) {
 }
 
 func TestLongPollRegistryTimeout(t *testing.T) {
-	r := registry()
+	r := NewMemRegistry()
 
 	r.Declare("a")
 

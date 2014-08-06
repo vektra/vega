@@ -10,15 +10,21 @@ type Registry struct {
 	sync.Mutex
 
 	mailboxes map[string]Mailbox
+	creator   func(string) Mailbox
 }
 
-func registry() *Registry {
+func NewRegistry(create func(string) Mailbox) *Registry {
 	return &Registry{
 		mailboxes: make(map[string]Mailbox),
+		creator:   create,
 	}
 }
 
-func (r *Registry) Poll(name string) (*Message, bool) {
+func NewMemRegistry() *Registry {
+	return NewRegistry(NewMemMailbox)
+}
+
+func (r *Registry) Poll(name string) (*Message, error) {
 	r.Lock()
 	defer r.Unlock()
 
@@ -26,21 +32,29 @@ func (r *Registry) Poll(name string) (*Message, bool) {
 		return mailbox.Poll()
 	}
 
-	return nil, false
+	return nil, nil
 }
 
-func (r *Registry) LongPoll(name string, til time.Duration) (*Message, bool) {
+func (r *Registry) LongPoll(name string, til time.Duration) (*Message, error) {
 	r.Lock()
 
 	mailbox, ok := r.mailboxes[name]
 	if !ok {
+		debugf("missing mailbox %s\n", name)
 		r.Unlock()
-		return nil, false
+		return nil, ENoMailbox
 	}
 
-	if val, ok := mailbox.Poll(); ok {
+	debugf("long polling %s: %#v\n", name, mailbox)
+	val, err := mailbox.Poll()
+	if err != nil {
 		r.Unlock()
-		return val, true
+		return nil, err
+	}
+
+	if val != nil {
+		r.Unlock()
+		return val, nil
 	}
 
 	indicator := mailbox.AddWatcher()
@@ -50,12 +64,12 @@ func (r *Registry) LongPoll(name string, til time.Duration) (*Message, bool) {
 	select {
 	case val := <-indicator:
 		if val != nil {
-			return val, true
+			return val, nil
 		} else {
-			return val, false
+			return val, nil
 		}
 	case <-time.Tick(til):
-		return nil, false
+		return nil, nil
 	}
 }
 
@@ -77,7 +91,7 @@ func (r *Registry) Declare(name string) error {
 	defer r.Unlock()
 
 	if _, ok := r.mailboxes[name]; !ok {
-		r.mailboxes[name] = NewMemMailbox()
+		r.mailboxes[name] = r.creator(name)
 	}
 
 	return nil

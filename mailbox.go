@@ -1,22 +1,23 @@
 package mailbox
 
 type MemMailbox struct {
+	name     string
 	values   []*Message
 	watchers []chan *Message
 }
 
-func NewMemMailbox() Mailbox {
-	return &MemMailbox{nil, nil}
+func NewMemMailbox(name string) Mailbox {
+	return &MemMailbox{name, nil, nil}
 }
 
-func (mm *MemMailbox) Poll() (*Message, bool) {
+func (mm *MemMailbox) Poll() (*Message, error) {
 	if len(mm.values) > 0 {
 		val := mm.values[0]
 		mm.values = mm.values[1:]
-		return val, true
+		return val, nil
 	}
 
-	return nil, false
+	return nil, nil
 }
 
 func (mm *MemMailbox) Push(value *Message) error {

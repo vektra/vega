@@ -3,9 +3,9 @@ package mailbox
 import "testing"
 
 func TestRouterAdd(t *testing.T) {
-	r := registry()
+	r := NewMemRegistry()
 
-	d := testRouter()
+	d := MemRouter()
 	d.Add("a", r)
 
 	r2, ok := d.DiscoverEndpoint("a")
@@ -20,10 +20,10 @@ func TestRouterAdd(t *testing.T) {
 }
 
 func TestRouterPush(t *testing.T) {
-	r := registry()
+	r := NewMemRegistry()
 	r.Declare("a")
 
-	d := testRouter()
+	d := MemRouter()
 	d.Add("a", r)
 
 	msg := Msg([]byte("hello"))

@@ -8,7 +8,7 @@ type MailboxStats struct {
 
 type Mailbox interface {
 	Push(*Message) error
-	Poll() (*Message, bool)
+	Poll() (*Message, error)
 	AddWatcher() <-chan *Message
 	Stats() *MailboxStats
 }
@@ -16,6 +16,11 @@ type Mailbox interface {
 type Storage interface {
 	Declare(string) error
 	Push(string, *Message) error
-	Poll(string) (*Message, bool)
-	LongPoll(string, time.Duration) (*Message, bool)
+	Poll(string) (*Message, error)
+	LongPoll(string, time.Duration) (*Message, error)
+}
+
+type RouteTable interface {
+	Set(string, Storage) error
+	Get(string) (Storage, bool)
 }

@@ -3,7 +3,7 @@ package mailbox
 import "testing"
 
 func TestMailboxPush(t *testing.T) {
-	m := NewMemMailbox()
+	m := NewMemMailbox("")
 
 	msg := Msg([]byte("hello"))
 
@@ -16,7 +16,7 @@ func TestMailboxPush(t *testing.T) {
 }
 
 func TestMailboxWatcher(t *testing.T) {
-	m := NewMemMailbox()
+	m := NewMemMailbox("")
 
 	watch := m.AddWatcher()
 

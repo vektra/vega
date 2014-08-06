@@ -50,7 +50,7 @@ type mailboxHeader struct {
 	ReadIndex, WriteIndex, Size int
 }
 
-func (m *diskMailbox) Poll() (*Message, bool) {
+func (m *diskMailbox) Poll() (*Message, error) {
 	m.Lock()
 	defer m.Unlock()
 
@@ -60,32 +60,36 @@ func (m *diskMailbox) Poll() (*Message, bool) {
 
 	data, err := db.Get(ro, m.prefix)
 	if err != nil {
-		return nil, false
+		return nil, nil
+	}
+
+	if len(data) == 0 {
+		return nil, nil
 	}
 
 	var header mailboxHeader
 
 	err = json.Unmarshal(data, &header)
 	if err != nil {
-		return nil, false
+		return nil, err
 	}
 
 	if header.Size == 0 {
-		return nil, false
+		return nil, nil
 	}
 
 	key := append(m.prefix, []byte(strconv.Itoa(header.ReadIndex))...)
 
 	data, err = db.Get(ro, key)
 	if err != nil {
-		panic(err)
+		return nil, err
 	}
 
 	wo := levigo.NewWriteOptions()
 
 	err = db.Delete(wo, key)
 	if err != nil {
-		panic(err)
+		return nil, err
 	}
 
 	header.ReadIndex++
@@ -93,15 +97,15 @@ func (m *diskMailbox) Poll() (*Message, bool) {
 
 	headerData, err := json.Marshal(&header)
 	if err != nil {
-		panic(err)
+		return nil, err
 	}
 
 	err = db.Put(wo, m.prefix, headerData)
 	if err != nil {
-		panic(err)
+		return nil, err
 	}
 
-	return DecodeMessage(data), true
+	return DecodeMessage(data), nil
 }
 
 func (m *diskMailbox) Push(value *Message) error {

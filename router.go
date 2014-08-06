@@ -1,10 +1,5 @@
 package mailbox
 
-type RouteTable interface {
-	Set(string, Storage) error
-	Get(string) (Storage, bool)
-}
-
 type MemRouteTable map[string]Storage
 
 func (ht MemRouteTable) Set(name string, st Storage) error {
@@ -21,7 +16,7 @@ type Router struct {
 	routes RouteTable
 }
 
-func testRouter() *Router {
+func MemRouter() *Router {
 	return &Router{make(MemRouteTable)}
 }
 
@@ -37,6 +32,7 @@ func (r *Router) DiscoverEndpoint(name string) (Storage, bool) {
 
 func (r *Router) Push(name string, body *Message) error {
 	if storage, ok := r.routes.Get(name); ok {
+		debugf("Routing %s to %#v\n", name, storage)
 		storage.Push(name, body)
 		return nil
 	}
