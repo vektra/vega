@@ -4,6 +4,7 @@ import (
 	"errors"
 	"io"
 	"net"
+	"sync"
 	"time"
 
 	"github.com/ugorji/go/codec"
@@ -18,6 +19,9 @@ type Service struct {
 	Registry Storage
 
 	listener net.Listener
+
+	wg     sync.WaitGroup
+	closed bool
 }
 
 func NewService(addr string, reg Storage) (*Service, error) {
@@ -27,11 +31,17 @@ func NewService(addr string, reg Storage) (*Service, error) {
 		return nil, err
 	}
 
-	return &Service{
+	s := &Service{
 		Address:  addr,
 		Registry: reg,
 		listener: l,
-	}, nil
+	}
+
+	s.wg.Add(1)
+
+	go s.Accept()
+
+	return s, nil
 }
 
 func NewMemService(addr string) (*Service, error) {
@@ -39,11 +49,15 @@ func NewMemService(addr string) (*Service, error) {
 }
 
 func (s *Service) Close() error {
+	s.closed = true
 	s.listener.Close()
+	s.wg.Wait()
 	return nil
 }
 
 func (s *Service) Accept() error {
+	defer s.wg.Done()
+
 	for {
 		conn, err := s.listener.Accept()
 		if err != nil {
@@ -107,7 +121,7 @@ func (s *Service) handle(c net.Conn) {
 
 			err = s.handlePush(c, msg)
 		default:
-			panic("unknown message type")
+			err = EProtocolError
 		}
 
 		if err != nil {
@@ -129,8 +143,8 @@ func (s *Service) handleDeclare(c net.Conn, msg *Declare) error {
 		return err
 	}
 
-	c.Write([]byte{uint8(SuccessType)})
-	return nil
+	_, err = c.Write([]byte{uint8(SuccessType)})
+	return err
 }
 
 func (s *Service) handlePoll(c net.Conn, msg *Poll) error {
@@ -171,19 +185,22 @@ func (s *Service) handleLongPoll(c net.Conn, msg *LongPoll) error {
 }
 
 func (s *Service) handlePush(c net.Conn, msg *Push) error {
-	debugf("handlePush for %#v\n", msg)
+	debugf("%s: handlePush for %#v\n", s.Address, s.Registry)
 
 	err := s.Registry.Push(msg.Name, msg.Message)
 	if err != nil {
 		return err
 	}
 
-	c.Write([]byte{uint8(SuccessType)})
-	return nil
+	debugf("%s: sending success\n", s.Address)
+
+	_, err = c.Write([]byte{uint8(SuccessType)})
+	return err
 }
 
 type Client struct {
 	conn net.Conn
+	addr string
 }
 
 func Dial(addr string) (*Client, error) {
@@ -192,100 +209,152 @@ func Dial(addr string) (*Client, error) {
 		return nil, err
 	}
 
-	return &Client{conn}, nil
+	return &Client{conn, addr}, nil
+}
+
+func (c *Client) checkError(err error) error {
+	debugf("client %s error: %s\n", c.addr, err)
+	if err == io.EOF {
+		c.conn = nil
+	}
+
+	return err
+}
+
+func (c *Client) Client() (net.Conn, error) {
+	if c.conn == nil {
+		s, err := net.Dial("tcp", c.addr)
+		if err != nil {
+			return nil, err
+		}
+
+		c.conn = s
+	}
+
+	return c.conn, nil
 }
 
 func (c *Client) Close() error {
-	return c.conn.Close()
+	if c.conn == nil {
+		return nil
+	}
+
+	err := c.conn.Close()
+	c.conn = nil
+	return err
 }
 
 func (c *Client) Declare(name string) error {
-	c.conn.Write([]byte{uint8(DeclareType)})
+	s, err := c.Client()
+	if err != nil {
+		return err
+	}
 
-	enc := codec.NewEncoder(c.conn, &msgpack)
+	_, err = s.Write([]byte{uint8(DeclareType)})
+	if err != nil {
+		return c.checkError(err)
+	}
+
+	enc := codec.NewEncoder(s, &msgpack)
 
 	msg := Declare{
 		Name: name,
 	}
 
-	err := enc.Encode(&msg)
+	err = enc.Encode(&msg)
 	if err != nil {
-		return err
+		return c.checkError(err)
 	}
 
 	buf := []byte{0}
 
-	_, err = io.ReadFull(c.conn, buf)
+	_, err = io.ReadFull(s, buf)
 	if err != nil {
-		return err
+		return c.checkError(err)
 	}
 
 	switch MessageType(buf[0]) {
 	case ErrorType:
 		var msgerr Error
 
-		err = codec.NewDecoder(c.conn, &msgpack).Decode(&msgerr)
+		err = codec.NewDecoder(s, &msgpack).Decode(&msgerr)
 		if err != nil {
-			return err
+			return c.checkError(err)
 		}
 
 		return errors.New(msgerr.Error)
 	case SuccessType:
 		return nil
 	default:
-		return EProtocolError
+		return c.checkError(EProtocolError)
 	}
 }
 
 func (c *Client) Poll(name string) (*Message, error) {
-	c.conn.Write([]byte{uint8(PollType)})
+	s, err := c.Client()
+	if err != nil {
+		return nil, err
+	}
 
-	enc := codec.NewEncoder(c.conn, &msgpack)
+	_, err = s.Write([]byte{uint8(PollType)})
+	if err != nil {
+		return nil, c.checkError(err)
+	}
+
+	enc := codec.NewEncoder(s, &msgpack)
 
 	msg := Poll{
 		Name: name,
 	}
 
 	if err := enc.Encode(&msg); err != nil {
-		return nil, err
+		return nil, c.checkError(err)
 	}
 
 	buf := []byte{0}
 
-	_, err := io.ReadFull(c.conn, buf)
+	_, err = io.ReadFull(s, buf)
 	if err != nil {
-		return nil, err
+		return nil, c.checkError(err)
 	}
 
 	switch MessageType(buf[0]) {
 	case ErrorType:
 		var msgerr Error
 
-		err = codec.NewDecoder(c.conn, &msgpack).Decode(&msgerr)
+		err = codec.NewDecoder(s, &msgpack).Decode(&msgerr)
 		if err != nil {
-			return nil, err
+			return nil, c.checkError(err)
 		}
 
 		return nil, errors.New(msgerr.Error)
 	case PollResultType:
-		dec := codec.NewDecoder(c.conn, &msgpack)
+		dec := codec.NewDecoder(s, &msgpack)
 
 		var res PollResult
 
 		if err := dec.Decode(&res); err != nil {
-			return nil, err
+			return nil, c.checkError(err)
 		}
 
 		return res.Message, nil
 	default:
-		return nil, EProtocolError
+		return nil, c.checkError(EProtocolError)
 	}
 }
 
 func (c *Client) LongPoll(name string, til time.Duration) (*Message, error) {
-	c.conn.Write([]byte{uint8(LongPollType)})
+	s, err := c.Client()
+	if err != nil {
+		return nil, err
+	}
 
-	enc := codec.NewEncoder(c.conn, &msgpack)
+	_, err = s.Write([]byte{uint8(LongPollType)})
+	if err != nil {
+		return nil, c.checkError(err)
+	}
+
+	enc := codec.NewEncoder(s, &msgpack)
 
 	msg := LongPoll{
 		Name:     name,
@@ -293,75 +362,93 @@ func (c *Client) LongPoll(name string, til time.Duration) (*Message, error) {
 	}
 
 	if err := enc.Encode(&msg); err != nil {
-		return nil, err
+		return nil, c.checkError(err)
 	}
 
 	buf := []byte{0}
 
-	_, err := io.ReadFull(c.conn, buf)
+	_, err = io.ReadFull(s, buf)
 	if err != nil {
-		return nil, err
+		return nil, c.checkError(err)
 	}
 
 	switch MessageType(buf[0]) {
 	case ErrorType:
 		var msgerr Error
 
-		err = codec.NewDecoder(c.conn, &msgpack).Decode(&msgerr)
+		err = codec.NewDecoder(s, &msgpack).Decode(&msgerr)
 		if err != nil {
-			return nil, err
+			return nil, c.checkError(err)
 		}
 
 		return nil, errors.New(msgerr.Error)
 	case PollResultType:
-		dec := codec.NewDecoder(c.conn, &msgpack)
+		dec := codec.NewDecoder(s, &msgpack)
 
 		var res PollResult
 
 		if err := dec.Decode(&res); err != nil {
-			return nil, err
+			return nil, c.checkError(err)
 		}
 
 		return res.Message, nil
 	default:
-		return nil, EProtocolError
+		return nil, c.checkError(EProtocolError)
 	}
 }
 
 func (c *Client) Push(name string, body *Message) error {
-	c.conn.Write([]byte{uint8(PushType)})
+	s, err := c.Client()
+	if err != nil {
+		return err
+	}
 
-	enc := codec.NewEncoder(c.conn, &msgpack)
+	_, err = s.Write([]byte{uint8(PushType)})
+	if err != nil {
+		return c.checkError(err)
+	}
+
+	enc := codec.NewEncoder(s, &msgpack)
 
 	msg := Push{
 		Name:    name,
 		Message: body,
 	}
 
+	debugf("client %s: sending push request\n", c.addr)
+
 	if err := enc.Encode(&msg); err != nil {
-		return err
+		return c.checkError(err)
 	}
 
 	buf := []byte{0}
 
-	_, err := io.ReadFull(c.conn, buf)
+	debugf("client %s: waiting for response\n", c.addr)
+
+	_, err = io.ReadFull(s, buf)
 	if err != nil {
-		return err
+		return c.checkError(err)
 	}
 
 	switch MessageType(buf[0]) {
 	case ErrorType:
+		debugf("client %s: got error\n", c.addr)
+
 		var msgerr Error
 
-		err = codec.NewDecoder(c.conn, &msgpack).Decode(&msgerr)
+		err = codec.NewDecoder(s, &msgpack).Decode(&msgerr)
 		if err != nil {
-			return err
+			return c.checkError(err)
 		}
 
 		return errors.New(msgerr.Error)
 	case SuccessType:
+		debugf("client %s: got success\n", c.addr)
+
 		return nil
 	default:
-		return EProtocolError
+		debugf("client %s: got protocol error\n", c.addr)
+
+		return c.checkError(EProtocolError)
 	}
 }

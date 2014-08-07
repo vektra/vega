@@ -44,7 +44,6 @@ func TestConsulPusher(t *testing.T) {
 	}
 
 	defer serv.Close()
-	go serv.Accept()
 
 	cp := &consulPusher{nil, cPort}
 
@@ -60,5 +59,66 @@ func TestConsulPusher(t *testing.T) {
 
 	if msg == nil || !msg.Equal(payload) {
 		t.Fatal("couldn't talk to the service")
+	}
+}
+
+func TestConsulRoutingTableWithMultipleDeclares(t *testing.T) {
+	m1 := NewMemRegistry()
+	m2 := NewMemRegistry()
+
+	ct1, err := NewConsulRoutingTable("127.0.0.1:8899")
+	if err != nil {
+		panic(err)
+	}
+
+	defer ct1.Cleanup()
+
+	ct2, err := NewConsulRoutingTable("127.0.0.1:9900")
+	if err != nil {
+		panic(err)
+	}
+
+	defer ct2.Cleanup()
+
+	ct3, err := NewConsulRoutingTable("127.0.0.1:9900")
+	if err != nil {
+		panic(err)
+	}
+
+	defer ct3.Cleanup()
+
+	ct1.Set("a", m1)
+	ct2.Set("a", m2)
+
+	// propogation delay.
+	time.Sleep(100 * time.Millisecond)
+
+	pusher, ok := ct3.Get("a")
+	if !ok {
+		t.Fatal("couldn't find a")
+	}
+
+	mp, ok := pusher.(*multiPusher)
+	if !ok {
+		t.Fatal("multiPusher not returned")
+	}
+
+	if len(mp.pushers) != 2 {
+		t.Fatal("pusher doesn't have 2 servers")
+	}
+
+	cp1 := mp.pushers[0].(*consulPusher)
+	cp2 := mp.pushers[1].(*consulPusher)
+
+	if cp1.target == "127.0.0.1:8899" {
+		if cp2.target != "127.0.0.1:9900" {
+			t.Fatal("both servers were not returned")
+		}
+	} else if cp1.target == "127.0.0.1:9900" {
+		if cp2.target != "127.0.0.1:8899" {
+			t.Fatal("both servers were not returned")
+		}
+	} else {
+		t.Fatal("garbage addresses returned")
 	}
 }

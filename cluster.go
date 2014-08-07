@@ -8,7 +8,7 @@ type clusterNode struct {
 	disk   *diskStorage
 }
 
-func NewClusterNode(path string) (*clusterNode, error) {
+func NewClusterNode(path string, router *Router) (*clusterNode, error) {
 	disk, err := NewDiskStorage(path)
 	if err != nil {
 		return nil, err
@@ -17,8 +17,12 @@ func NewClusterNode(path string) (*clusterNode, error) {
 	return &clusterNode{
 		disk:   disk,
 		local:  NewRegistry(disk.Mailbox),
-		router: MemRouter(),
+		router: router,
 	}, nil
+}
+
+func NewMemClusterNode(path string) (*clusterNode, error) {
+	return NewClusterNode(path, MemRouter())
 }
 
 func (cn *clusterNode) AddRoute(name string, s Storage) {

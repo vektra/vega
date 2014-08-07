@@ -16,8 +16,12 @@ type Router struct {
 	routes RouteTable
 }
 
+func NewRouter(rt RouteTable) *Router {
+	return &Router{rt}
+}
+
 func MemRouter() *Router {
-	return &Router{make(MemRouteTable)}
+	return NewRouter(make(MemRouteTable))
 }
 
 func (r *Router) Add(name string, reg Pusher) {
@@ -33,8 +37,7 @@ func (r *Router) DiscoverEndpoint(name string) (Pusher, bool) {
 func (r *Router) Push(name string, body *Message) error {
 	if storage, ok := r.routes.Get(name); ok {
 		debugf("Routing %s to %#v\n", name, storage)
-		storage.Push(name, body)
-		return nil
+		return storage.Push(name, body)
 	}
 
 	return ENoMailbox

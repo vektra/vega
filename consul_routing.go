@@ -5,6 +5,7 @@ import (
 	"crypto/sha1"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -13,7 +14,11 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
+	"unsafe"
+
+	"github.com/vektra/consul_kv_cache/cache"
 )
 
 type consulRoutingTable struct {
@@ -23,7 +28,13 @@ type consulRoutingTable struct {
 
 	lock sync.RWMutex
 
-	cache map[string]*consulPusher
+	local RouteTable
+
+	consul *cache.ConsulKVCache
+
+	connections map[string]*consulPusher
+
+	cache *map[string]Pusher
 }
 
 func NewConsulRoutingTable(id string) (*consulRoutingTable, error) {
@@ -31,26 +42,76 @@ func NewConsulRoutingTable(id string) (*consulRoutingTable, error) {
 	h.Write([]byte(id))
 	k := hex.EncodeToString(h.Sum(nil))
 
+	tbl := make(map[string]Pusher)
+
 	ct := &consulRoutingTable{
-		selfId: []byte(id),
-		key:    k,
-		names:  nil,
-		cache:  make(map[string]*consulPusher),
+		selfId:      []byte(id),
+		key:         k,
+		names:       nil,
+		local:       make(MemRouteTable),
+		consul:      cache.NewConsulKVCache("mailbox-routing"),
+		cache:       &tbl,
+		connections: make(map[string]*consulPusher),
 	}
-
-	idx, err := ct.primeCache()
-	if err != nil {
-		return nil, err
-	}
-
-	go ct.updateCache(idx)
 
 	return ct, nil
 }
 
 var bTrue = []byte("true\n")
 
-func (ct *consulRoutingTable) Set(name string, p Pusher) {
+func setConsulKV(key string, value []byte) error {
+	url := "http://localhost:8500/v1/kv/" + key
+
+	body := bytes.NewReader(value)
+
+	req, err := http.NewRequest("PUT", url, body)
+	if err != nil {
+		return err
+	}
+
+	req.ContentLength = int64(len(value))
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return err
+	}
+
+	defer resp.Body.Close()
+
+	data, err := ioutil.ReadAll(resp.Body)
+
+	if !bytes.Equal(data, bTrue) {
+		errors.New("Consul returned an error setting the value")
+	}
+
+	return nil
+}
+
+func delConsulKV(key string, rec bool) error {
+	url := "http://localhost:8500/v1/kv/" + key
+
+	if rec {
+		url += "?recurse"
+	}
+
+	req, err := http.NewRequest("DELETE", url, nil)
+	if err != nil {
+		return err
+	}
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return err
+	}
+
+	resp.Body.Close()
+
+	return nil
+}
+
+func (ct *consulRoutingTable) Set(name string, p Pusher) error {
+	ct.local.Set(name, p)
+
 	url := "http://localhost:8500/v1/kv/mailbox-routing/" + name + "/" + ct.key
 
 	body := bytes.NewReader(ct.selfId)
@@ -76,10 +137,11 @@ func (ct *consulRoutingTable) Set(name string, p Pusher) {
 	}
 
 	ct.names = append(ct.names, name)
+	return nil
 }
 
 type consulPusher struct {
-	client *Client
+	client Storage
 	target string
 }
 
@@ -91,7 +153,11 @@ type consulValue struct {
 	Value       []byte
 }
 
-func (ct *consulRoutingTable) ManualGet(name string) (Pusher, bool) {
+func (ct *consulRoutingTable) Get(name string) (Pusher, bool) {
+	if lp, ok := ct.local.Get(name); ok {
+		return lp, true
+	}
+
 	url := "http://localhost:8500/v1/kv/mailbox-routing/" + name + "?recurse"
 
 	resp, err := http.Get(url)
@@ -109,20 +175,56 @@ func (ct *consulRoutingTable) ManualGet(name string) (Pusher, bool) {
 		return nil, false
 	}
 
-	return &consulPusher{nil, string(values[0].Value)}, true
+	if len(values) == 0 {
+		return nil, false
+	}
+
+	if len(values) == 1 {
+		id := string(values[0].Value)
+
+		if cp, ok := ct.connections[id]; ok {
+			return cp, true
+		}
+
+		cp := &consulPusher{nil, string(values[0].Value)}
+
+		ct.connections[id] = cp
+
+		cp.Connect()
+
+		return cp, true
+	}
+
+	mp := NewMultiPusher()
+
+	for _, val := range values {
+		id := string(val.Value)
+
+		if cp, ok := ct.connections[id]; ok {
+			mp.Add(cp)
+		} else {
+			cp := &consulPusher{nil, id}
+
+			ct.connections[id] = cp
+
+			cp.Connect()
+
+			mp.Add(cp)
+		}
+	}
+
+	return mp, true
 }
 
-func (ct *consulRoutingTable) Get(name string) (Pusher, bool) {
-	ct.lock.RLock()
-
-	cp, ok := ct.cache[name]
-
-	ct.lock.RUnlock()
+func (ct *consulRoutingTable) CacheGet(name string) (Pusher, bool) {
+	ptr := unsafe.Pointer(ct.cache)
+	tbl := atomic.LoadPointer(&ptr)
+	cp, ok := (*((*map[string]Pusher)(tbl)))[name]
 
 	return cp, ok
 }
 
-func (ct *consulRoutingTable) addEntry(val *consulValue) {
+func (ct *consulRoutingTable) addEntry(tbl map[string]Pusher, val *consulValue) {
 	cp := &consulPusher{nil, string(val.Value)}
 
 	start := strings.Index(val.Key, "mailbox-routing/") + len("mailbox-routing/")
@@ -135,7 +237,22 @@ func (ct *consulRoutingTable) addEntry(val *consulValue) {
 
 	cp.Connect()
 
-	ct.cache[name] = cp
+	if pusher, ok := tbl[name]; ok {
+		switch st := pusher.(type) {
+		case *consulPusher:
+			mp := NewMultiPusher()
+			mp.Add(st)
+			mp.Add(cp)
+
+			tbl[name] = mp
+		case *multiPusher:
+			st.Add(cp)
+		default:
+			panic("unknown pusher type?")
+		}
+	} else {
+		tbl[name] = cp
+	}
 }
 
 func (ct *consulRoutingTable) primeCache() (int, error) {
@@ -156,15 +273,19 @@ func (ct *consulRoutingTable) primeCache() (int, error) {
 		return 0, err
 	}
 
-	ct.lock.Lock()
+	tbl := make(map[string]Pusher)
 
 	for _, val := range values {
-		ct.addEntry(&val)
+		ct.addEntry(tbl, &val)
 	}
 
-	ct.lock.Unlock()
+	fmt.Printf("built table: %#v\n", tbl)
 
 	idx, _ := strconv.Atoi(resp.Header.Get("X-Consul-Index"))
+
+	cur := unsafe.Pointer(ct.cache)
+
+	atomic.StorePointer(&cur, unsafe.Pointer(&tbl))
 
 	return idx, nil
 }
@@ -194,13 +315,9 @@ func (ct *consulRoutingTable) updateCache(idx int) {
 			continue
 		}
 
-		ct.lock.Lock()
-
-		for _, val := range values {
-			ct.addEntry(&val)
-		}
-
-		ct.lock.Unlock()
+		// Because consul does not send watches for deletes, when we detect
+		// a change, we have to reread all the routes.
+		ct.primeCache()
 
 		idx, _ = strconv.Atoi(resp.Header.Get("X-Consul-Index"))
 	}
@@ -232,18 +349,40 @@ func (cp *consulPusher) Connect() error {
 		return err
 	}
 
-	cp.client = c
+	cp.client = NewReliableStorage(c)
+
 	return nil
 }
 
 func (cp *consulPusher) Declare(name string) error {
+	if cp.client == nil {
+		err := cp.Connect()
+		if err != nil {
+			return err
+		}
+	}
+
 	return cp.client.Declare(name)
 }
 
 func (cp *consulPusher) Push(name string, msg *Message) error {
+	if cp.client == nil {
+		err := cp.Connect()
+		if err != nil {
+			return err
+		}
+	}
+
 	return cp.client.Push(name, msg)
 }
 
 func (cp *consulPusher) Poll(name string) (*Message, error) {
+	if cp.client == nil {
+		err := cp.Connect()
+		if err != nil {
+			return nil, err
+		}
+	}
+
 	return cp.client.Poll(name)
 }

@@ -16,7 +16,6 @@ func TestServicePushAndPoll(t *testing.T) {
 	}
 
 	defer serv.Close()
-	go serv.Accept()
 
 	c1, err := Dial(cPort)
 	if err != nil {
@@ -64,7 +63,6 @@ func TestServiceLongPoll(t *testing.T) {
 	}
 
 	defer serv.Close()
-	go serv.Accept()
 
 	c1, err := Dial(cPort)
 	if err != nil {
@@ -101,5 +99,38 @@ func TestServiceLongPoll(t *testing.T) {
 
 	if got == nil || !got.Equal(payload) {
 		t.Fatal("body was corrupted")
+	}
+}
+
+func TestClientReconnects(t *testing.T) {
+	serv, err := NewMemService(cPort)
+	if err != nil {
+		panic(err)
+	}
+
+	defer serv.Close()
+
+	c1, err := Dial(cPort)
+	if err != nil {
+		panic(err)
+	}
+
+	defer c1.Close()
+
+	c1.Declare("a")
+
+	c1.Close()
+
+	payload := Msg([]byte("hello"))
+
+	err = c1.Push("a", payload)
+	if err != nil {
+		t.Fatal("client didn't reconnect")
+	}
+
+	got, err := c1.Poll("a")
+
+	if !got.Equal(payload) {
+		t.Fatal("message was lost")
 	}
 }

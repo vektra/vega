@@ -16,7 +16,7 @@ func TestClusterLocalMessages(t *testing.T) {
 
 	defer os.RemoveAll(dir)
 
-	cn, err := NewClusterNode(dir)
+	cn, err := NewMemClusterNode(dir)
 	if err != nil {
 		panic(err)
 	}
@@ -50,7 +50,7 @@ func TestClusterRoutes(t *testing.T) {
 
 	defer os.RemoveAll(dir)
 
-	cn, err := NewClusterNode(dir)
+	cn, err := NewMemClusterNode(dir)
 	if err != nil {
 		panic(err)
 	}
@@ -81,7 +81,7 @@ func TestClusterLongPoll(t *testing.T) {
 
 	defer os.RemoveAll(dir)
 
-	cn, err := NewClusterNode(dir)
+	cn, err := NewMemClusterNode(dir)
 	if err != nil {
 		panic(err)
 	}
@@ -118,7 +118,7 @@ func TestClusterRoutesViaNetwork(t *testing.T) {
 
 	defer os.RemoveAll(dir)
 
-	cn, err := NewClusterNode(dir)
+	cn, err := NewMemClusterNode(dir)
 	if err != nil {
 		panic(err)
 	}
@@ -132,7 +132,7 @@ func TestClusterRoutesViaNetwork(t *testing.T) {
 
 	defer os.RemoveAll(dir2)
 
-	cn2, err := NewClusterNode(dir2)
+	cn2, err := NewMemClusterNode(dir2)
 	if err != nil {
 		panic(err)
 	}
@@ -147,7 +147,6 @@ func TestClusterRoutesViaNetwork(t *testing.T) {
 	}
 
 	defer s1.Close()
-	go s1.Accept()
 
 	s2, err := NewService(cPort2, cn2)
 	if err != nil {
@@ -155,7 +154,6 @@ func TestClusterRoutesViaNetwork(t *testing.T) {
 	}
 
 	defer s2.Close()
-	go s2.Accept()
 
 	// Wire up a client going to s1
 
