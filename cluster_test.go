@@ -3,6 +3,7 @@ package mailbox
 import (
 	"io/ioutil"
 	"os"
+	"sync"
 	"testing"
 	"time"
 )
@@ -69,6 +70,43 @@ func TestClusterRoutes(t *testing.T) {
 
 	if msg == nil || !msg.Equal(payload) {
 		t.Fatal("message was not stored locally")
+	}
+}
+
+func TestClusterLongPoll(t *testing.T) {
+	dir, err := ioutil.TempDir("", "mailbox")
+	if err != nil {
+		panic(err)
+	}
+
+	defer os.RemoveAll(dir)
+
+	cn, err := NewClusterNode(dir)
+	if err != nil {
+		panic(err)
+	}
+
+	defer cn.Close()
+
+	msg := Msg([]byte("hello"))
+
+	var got *Message
+
+	var wg sync.WaitGroup
+
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		got, _ = cn.LongPoll("a", 2*time.Second)
+	}()
+
+	cn.Declare("a")
+	cn.Push("a", msg)
+
+	wg.Wait()
+
+	if got == nil || !msg.Equal(got) {
+		t.Fatal("long poll didn't see the value")
 	}
 }
 
@@ -145,7 +183,7 @@ func TestClusterRoutesViaNetwork(t *testing.T) {
 
 	debugf("polling\n")
 
-	ret, err := toS1.LongPoll("a", 2*time.Second)
+	ret, err := toS1.Poll("a")
 	if err != nil {
 		panic(err)
 	}

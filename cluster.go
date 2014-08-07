@@ -37,7 +37,6 @@ func (cn *clusterNode) Declare(name string) error {
 
 func (cn *clusterNode) Push(name string, msg *Message) error {
 	return cn.router.Push(name, msg)
-	// return cn.disk.Mailbox(name).Push(msg)
 }
 
 func (cn *clusterNode) Poll(name string) (*Message, error) {

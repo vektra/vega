@@ -20,7 +20,11 @@ type Storage interface {
 	LongPoll(string, time.Duration) (*Message, error)
 }
 
+type Pusher interface {
+	Push(string, *Message) error
+}
+
 type RouteTable interface {
-	Set(string, Storage) error
-	Get(string) (Storage, bool)
+	Set(string, Pusher) error
+	Get(string) (Pusher, bool)
 }

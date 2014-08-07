@@ -1,13 +1,13 @@
 package mailbox
 
-type MemRouteTable map[string]Storage
+type MemRouteTable map[string]Pusher
 
-func (ht MemRouteTable) Set(name string, st Storage) error {
+func (ht MemRouteTable) Set(name string, st Pusher) error {
 	ht[name] = st
 	return nil
 }
 
-func (ht MemRouteTable) Get(name string) (Storage, bool) {
+func (ht MemRouteTable) Get(name string) (Pusher, bool) {
 	s, ok := ht[name]
 	return s, ok
 }
@@ -20,11 +20,11 @@ func MemRouter() *Router {
 	return &Router{make(MemRouteTable)}
 }
 
-func (r *Router) Add(name string, reg Storage) {
+func (r *Router) Add(name string, reg Pusher) {
 	r.routes.Set(name, reg)
 }
 
-func (r *Router) DiscoverEndpoint(name string) (Storage, bool) {
+func (r *Router) DiscoverEndpoint(name string) (Pusher, bool) {
 	reg, ok := r.routes.Get(name)
 
 	return reg, ok
