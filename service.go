@@ -4,9 +4,11 @@ import (
 	"errors"
 	"io"
 	"net"
+	"strings"
 	"sync"
 	"time"
 
+	"github.com/hashicorp/yamux"
 	"github.com/ugorji/go/codec"
 )
 
@@ -64,13 +66,53 @@ func (s *Service) Accept() error {
 			return err
 		}
 
-		go s.handle(conn)
+		go s.acceptMux(conn)
 	}
 
 	return nil
 }
 
+func eofish(err error) bool {
+	if err == io.EOF {
+		return true
+	}
+
+	if strings.Index(err.Error(), "connection reset by peer") != -1 {
+		return true
+	}
+
+	return false
+}
+
+func (s *Service) acceptMux(c net.Conn) {
+	session, err := yamux.Server(c, nil)
+	if err != nil {
+		if eofish(err) {
+			return
+		}
+
+		panic(err)
+	}
+
+	defer session.Close()
+
+	for {
+		stream, err := session.Accept()
+		if err != nil {
+			if eofish(err) {
+				return
+			}
+
+			panic(err)
+		}
+
+		go s.handle(stream)
+	}
+}
+
 func (s *Service) handle(c net.Conn) {
+	defer c.Close()
+
 	buf := []byte{0}
 
 	for {
@@ -200,16 +242,16 @@ func (s *Service) handlePush(c net.Conn, msg *Push) error {
 
 type Client struct {
 	conn net.Conn
+	sess *yamux.Session
 	addr string
 }
 
 func Dial(addr string) (*Client, error) {
-	conn, err := net.Dial("tcp", addr)
-	if err != nil {
-		return nil, err
-	}
+	cl := &Client{nil, nil, addr}
 
-	return &Client{conn, addr}, nil
+	cl.Session()
+
+	return cl, nil
 }
 
 func (c *Client) checkError(err error) error {
@@ -221,17 +263,24 @@ func (c *Client) checkError(err error) error {
 	return err
 }
 
-func (c *Client) Client() (net.Conn, error) {
-	if c.conn == nil {
+func (c *Client) Session() (*yamux.Session, error) {
+	if c.sess == nil {
 		s, err := net.Dial("tcp", c.addr)
 		if err != nil {
 			return nil, err
 		}
 
 		c.conn = s
+
+		sess, err := yamux.Client(c.conn, nil)
+		if err != nil {
+			return nil, err
+		}
+
+		c.sess = sess
 	}
 
-	return c.conn, nil
+	return c.sess, nil
 }
 
 func (c *Client) Close() error {
@@ -239,16 +288,24 @@ func (c *Client) Close() error {
 		return nil
 	}
 
-	err := c.conn.Close()
+	err := c.sess.Close()
+	c.sess = nil
 	c.conn = nil
 	return err
 }
 
 func (c *Client) Declare(name string) error {
-	s, err := c.Client()
+	sess, err := c.Session()
 	if err != nil {
 		return err
 	}
+
+	s, err := sess.Open()
+	if err != nil {
+		return err
+	}
+
+	defer s.Close()
 
 	_, err = s.Write([]byte{uint8(DeclareType)})
 	if err != nil {
@@ -291,10 +348,17 @@ func (c *Client) Declare(name string) error {
 }
 
 func (c *Client) Poll(name string) (*Message, error) {
-	s, err := c.Client()
+	sess, err := c.Session()
 	if err != nil {
 		return nil, err
 	}
+
+	s, err := sess.Open()
+	if err != nil {
+		return nil, err
+	}
+
+	defer s.Close()
 
 	_, err = s.Write([]byte{uint8(PollType)})
 	if err != nil {
@@ -344,10 +408,17 @@ func (c *Client) Poll(name string) (*Message, error) {
 }
 
 func (c *Client) LongPoll(name string, til time.Duration) (*Message, error) {
-	s, err := c.Client()
+	sess, err := c.Session()
 	if err != nil {
 		return nil, err
 	}
+
+	s, err := sess.Open()
+	if err != nil {
+		return nil, err
+	}
+
+	defer s.Close()
 
 	_, err = s.Write([]byte{uint8(LongPollType)})
 	if err != nil {
@@ -398,10 +469,17 @@ func (c *Client) LongPoll(name string, til time.Duration) (*Message, error) {
 }
 
 func (c *Client) Push(name string, body *Message) error {
-	s, err := c.Client()
+	sess, err := c.Session()
 	if err != nil {
 		return err
 	}
+
+	s, err := sess.Open()
+	if err != nil {
+		return err
+	}
+
+	defer s.Close()
 
 	_, err = s.Write([]byte{uint8(PushType)})
 	if err != nil {
