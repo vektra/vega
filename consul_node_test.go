@@ -17,7 +17,7 @@ func TestConsulNode(t *testing.T) {
 
 	cn1, err := NewConsulClusterNode(
 		&ConsulNodeConfig{
-			AdvertiseAddr: "127.0.0.1:8899",
+			AdvertiseAddr: "127.0.0.1",
 			ListenPort:    8899,
 			DataPath:      dir})
 

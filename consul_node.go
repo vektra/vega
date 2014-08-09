@@ -2,8 +2,10 @@ package mailbox
 
 import "fmt"
 
-type consulClusterNode struct {
+type ConsulClusterNode struct {
 	*clusterNode
+
+	Config *ConsulNodeConfig
 
 	service *Service
 }
@@ -47,7 +49,7 @@ func (cn *ConsulNodeConfig) AdvertiseID() string {
 	return fmt.Sprintf("%s:%d", cn.AdvertiseAddr, cn.ListenPort)
 }
 
-func NewConsulClusterNode(config *ConsulNodeConfig) (*consulClusterNode, error) {
+func NewConsulClusterNode(config *ConsulNodeConfig) (*ConsulClusterNode, error) {
 	if config == nil {
 		config = &ConsulNodeConfig{}
 	}
@@ -73,5 +75,5 @@ func NewConsulClusterNode(config *ConsulNodeConfig) (*consulClusterNode, error) 
 		return nil, err
 	}
 
-	return &consulClusterNode{cn, serv}, err
+	return &ConsulClusterNode{cn, config, serv}, err
 }
