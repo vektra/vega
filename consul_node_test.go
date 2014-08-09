@@ -15,9 +15,12 @@ func TestConsulNode(t *testing.T) {
 
 	defer os.RemoveAll(dir)
 
-	id1 := "127.0.0.1:8899"
+	cn1, err := NewConsulClusterNode(
+		&ConsulNodeConfig{
+			AdvertiseAddr: "127.0.0.1:8899",
+			ListenPort:    8899,
+			DataPath:      dir})
 
-	cn1, err := NewConsulClusterNode(id1, ":8899", dir)
 	if err != nil {
 		panic(err)
 	}
@@ -31,9 +34,12 @@ func TestConsulNode(t *testing.T) {
 
 	defer os.RemoveAll(dir2)
 
-	id2 := "127.0.0.1:9900"
+	cn2, err := NewConsulClusterNode(
+		&ConsulNodeConfig{
+			AdvertiseAddr: "127.0.0.1",
+			ListenPort:    9900,
+			DataPath:      dir2})
 
-	cn2, err := NewConsulClusterNode(id2, ":9900", dir2)
 	if err != nil {
 		panic(err)
 	}
