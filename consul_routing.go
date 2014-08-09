@@ -19,7 +19,7 @@ type cachedPusher struct {
 type consulRoutingTable struct {
 	selfId []byte
 	key    string
-	names  []string
+	names  map[string]bool
 
 	lock sync.RWMutex
 
@@ -44,7 +44,7 @@ func NewConsulRoutingTable(id string) (*consulRoutingTable, error) {
 	ct := &consulRoutingTable{
 		selfId:      []byte(id),
 		key:         k,
-		names:       nil,
+		names:       make(map[string]bool),
 		local:       make(MemRouteTable),
 		consul:      consul,
 		connections: make(map[string]*consulPusher),
@@ -71,8 +71,17 @@ func (ct *consulRoutingTable) Set(name string, p Pusher) error {
 		return err
 	}
 
-	ct.names = append(ct.names, name)
+	ct.names[name] = true
 	return nil
+}
+
+func (ct *consulRoutingTable) Remove(name string) error {
+	delete(ct.names, name)
+
+	key := name + "/" + ct.key
+
+	ct.consul.Delete(key)
+	return ct.local.Remove(name)
 }
 
 type consulPusher struct {
@@ -90,6 +99,7 @@ type consulValue struct {
 
 func (ct *consulRoutingTable) Get(name string) (Pusher, bool) {
 	if lp, ok := ct.local.Get(name); ok {
+		debugf("found local pusher for %s: %#v\n", name, lp)
 		return lp, true
 	}
 
@@ -166,7 +176,7 @@ func (ct *consulRoutingTable) Get(name string) (Pusher, bool) {
 }
 
 func (ct *consulRoutingTable) Cleanup() error {
-	for _, name := range ct.names {
+	for name, _ := range ct.names {
 		url := "http://localhost:8500/v1/kv/mailbox-routing/" + name + "/" + ct.key
 
 		req, err := http.NewRequest("DELETE", url, nil)

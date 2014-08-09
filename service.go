@@ -24,6 +24,10 @@ type Service struct {
 
 	wg     sync.WaitGroup
 	closed bool
+
+	lock sync.Mutex
+
+	ephemerals map[net.Conn][]string
 }
 
 func NewService(addr string, reg Storage) (*Service, error) {
@@ -34,9 +38,10 @@ func NewService(addr string, reg Storage) (*Service, error) {
 	}
 
 	s := &Service{
-		Address:  addr,
-		Registry: reg,
-		listener: l,
+		Address:    addr,
+		Registry:   reg,
+		listener:   l,
+		ephemerals: make(map[net.Conn][]string),
 	}
 
 	s.wg.Add(1)
@@ -81,7 +86,23 @@ func eofish(err error) bool {
 		return true
 	}
 
+	if strings.Index(err.Error(), "broken pipe") != -1 {
+		return true
+	}
+
 	return false
+}
+
+func (s *Service) cleanupConn(c net.Conn) {
+	s.lock.Lock()
+
+	for _, name := range s.ephemerals[c] {
+		s.Registry.Abandon(name)
+	}
+
+	delete(s.ephemerals, c)
+
+	s.lock.Unlock()
 }
 
 func (s *Service) acceptMux(c net.Conn) {
@@ -106,11 +127,11 @@ func (s *Service) acceptMux(c net.Conn) {
 			panic(err)
 		}
 
-		go s.handle(stream)
+		go s.handle(c, stream)
 	}
 }
 
-func (s *Service) handle(c net.Conn) {
+func (s *Service) handle(parent, c net.Conn) {
 	defer c.Close()
 
 	buf := []byte{0}
@@ -132,6 +153,26 @@ func (s *Service) handle(c net.Conn) {
 			}
 
 			err = s.handleDeclare(c, msg)
+		case EphemeralDeclareType:
+			msg := &Declare{}
+			dec := codec.NewDecoder(c, &msgpack)
+
+			err = dec.Decode(msg)
+			if err != nil {
+				return
+			}
+
+			err = s.handleEphemeralDeclare(c, msg, parent)
+		case AbandonType:
+			msg := &Abandon{}
+			dec := codec.NewDecoder(c, &msgpack)
+
+			err = dec.Decode(msg)
+			if err != nil {
+				return
+			}
+
+			err = s.handleAbandon(c, msg)
 		case PollType:
 			msg := &Poll{}
 			dec := codec.NewDecoder(c, &msgpack)
@@ -162,6 +203,9 @@ func (s *Service) handle(c net.Conn) {
 			}
 
 			err = s.handlePush(c, msg)
+		case CloseType:
+			err = s.handleClose(c, parent)
+
 		default:
 			err = EProtocolError
 		}
@@ -173,7 +217,14 @@ func (s *Service) handle(c net.Conn) {
 
 			err = enc.Encode(&Error{err.Error()})
 			if err != nil {
-				panic(err)
+				switch err {
+				case yamux.ErrStreamClosed:
+					return
+				case yamux.ErrSessionShutdown:
+					return
+				default:
+					panic(err)
+				}
 			}
 		}
 	}
@@ -181,6 +232,32 @@ func (s *Service) handle(c net.Conn) {
 
 func (s *Service) handleDeclare(c net.Conn, msg *Declare) error {
 	err := s.Registry.Declare(msg.Name)
+	if err != nil {
+		return err
+	}
+
+	_, err = c.Write([]byte{uint8(SuccessType)})
+	return err
+}
+
+func (s *Service) handleEphemeralDeclare(c net.Conn, msg *Declare, parent net.Conn) error {
+	err := s.Registry.Declare(msg.Name)
+	if err != nil {
+		return err
+	}
+
+	s.lock.Lock()
+
+	s.ephemerals[parent] = append(s.ephemerals[parent], msg.Name)
+
+	s.lock.Unlock()
+
+	_, err = c.Write([]byte{uint8(SuccessType)})
+	return err
+}
+
+func (s *Service) handleAbandon(c net.Conn, msg *Abandon) error {
+	err := s.Registry.Abandon(msg.Name)
 	if err != nil {
 		return err
 	}
@@ -240,6 +317,13 @@ func (s *Service) handlePush(c net.Conn, msg *Push) error {
 	return err
 }
 
+func (s *Service) handleClose(c, parent net.Conn) error {
+	s.cleanupConn(parent)
+
+	_, err := c.Write([]byte{uint8(SuccessType)})
+	return err
+}
+
 type Client struct {
 	conn net.Conn
 	sess *yamux.Session
@@ -283,14 +367,52 @@ func (c *Client) Session() (*yamux.Session, error) {
 	return c.sess, nil
 }
 
-func (c *Client) Close() error {
+func (c *Client) Close() (err error) {
 	if c.conn == nil {
 		return nil
 	}
 
-	err := c.sess.Close()
-	c.sess = nil
-	c.conn = nil
+	sess, err := c.Session()
+	if err != nil {
+		return err
+	}
+
+	s, err := sess.Open()
+	if err != nil {
+		return err
+	}
+
+	_, err = s.Write([]byte{uint8(CloseType)})
+
+	defer func() {
+		s.Close()
+
+		err = c.sess.Close()
+		c.sess = nil
+		c.conn = nil
+	}()
+
+	buf := []byte{0}
+
+	io.ReadFull(s, buf)
+	if err == nil {
+		switch MessageType(buf[0]) {
+		case ErrorType:
+			var msgerr Error
+
+			err = codec.NewDecoder(s, &msgpack).Decode(&msgerr)
+			if err != nil {
+				return c.checkError(err)
+			}
+
+			return errors.New(msgerr.Error)
+		case SuccessType:
+			return nil
+		default:
+			return c.checkError(EProtocolError)
+		}
+	}
+
 	return err
 }
 
@@ -315,6 +437,112 @@ func (c *Client) Declare(name string) error {
 	enc := codec.NewEncoder(s, &msgpack)
 
 	msg := Declare{
+		Name: name,
+	}
+
+	err = enc.Encode(&msg)
+	if err != nil {
+		return c.checkError(err)
+	}
+
+	buf := []byte{0}
+
+	_, err = io.ReadFull(s, buf)
+	if err != nil {
+		return c.checkError(err)
+	}
+
+	switch MessageType(buf[0]) {
+	case ErrorType:
+		var msgerr Error
+
+		err = codec.NewDecoder(s, &msgpack).Decode(&msgerr)
+		if err != nil {
+			return c.checkError(err)
+		}
+
+		return errors.New(msgerr.Error)
+	case SuccessType:
+		return nil
+	default:
+		return c.checkError(EProtocolError)
+	}
+}
+
+func (c *Client) EphemeralDeclare(name string) error {
+	sess, err := c.Session()
+	if err != nil {
+		return err
+	}
+
+	s, err := sess.Open()
+	if err != nil {
+		return err
+	}
+
+	defer s.Close()
+
+	_, err = s.Write([]byte{uint8(EphemeralDeclareType)})
+	if err != nil {
+		return c.checkError(err)
+	}
+
+	enc := codec.NewEncoder(s, &msgpack)
+
+	msg := Declare{
+		Name: name,
+	}
+
+	err = enc.Encode(&msg)
+	if err != nil {
+		return c.checkError(err)
+	}
+
+	buf := []byte{0}
+
+	_, err = io.ReadFull(s, buf)
+	if err != nil {
+		return c.checkError(err)
+	}
+
+	switch MessageType(buf[0]) {
+	case ErrorType:
+		var msgerr Error
+
+		err = codec.NewDecoder(s, &msgpack).Decode(&msgerr)
+		if err != nil {
+			return c.checkError(err)
+		}
+
+		return errors.New(msgerr.Error)
+	case SuccessType:
+		return nil
+	default:
+		return c.checkError(EProtocolError)
+	}
+}
+
+func (c *Client) Abandon(name string) error {
+	sess, err := c.Session()
+	if err != nil {
+		return err
+	}
+
+	s, err := sess.Open()
+	if err != nil {
+		return err
+	}
+
+	defer s.Close()
+
+	_, err = s.Write([]byte{uint8(AbandonType)})
+	if err != nil {
+		return c.checkError(err)
+	}
+
+	enc := codec.NewEncoder(s, &msgpack)
+
+	msg := Abandon{
 		Name: name,
 	}
 

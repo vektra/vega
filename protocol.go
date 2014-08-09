@@ -7,10 +7,13 @@ const (
 	SuccessType
 	ErrorType
 	DeclareType
+	EphemeralDeclareType
+	AbandonType
 	PollType
 	PollResultType
 	LongPollType
 	PushType
+	CloseType
 )
 
 type Error struct {
@@ -18,6 +21,10 @@ type Error struct {
 }
 
 type Declare struct {
+	Name string
+}
+
+type Abandon struct {
 	Name string
 }
 

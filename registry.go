@@ -96,3 +96,12 @@ func (r *Registry) Declare(name string) error {
 
 	return nil
 }
+
+func (r *Registry) Abandon(name string) error {
+	r.Lock()
+	defer r.Unlock()
+
+	delete(r.mailboxes, name)
+
+	return nil
+}

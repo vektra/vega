@@ -15,6 +15,7 @@ type Mailbox interface {
 
 type Storage interface {
 	Declare(string) error
+	Abandon(string) error
 	Push(string, *Message) error
 	Poll(string) (*Message, error)
 	LongPoll(string, time.Duration) (*Message, error)
@@ -26,5 +27,6 @@ type Pusher interface {
 
 type RouteTable interface {
 	Set(string, Pusher) error
+	Remove(string) error
 	Get(string) (Pusher, bool)
 }

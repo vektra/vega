@@ -190,3 +190,41 @@ func TestClusterRoutesViaNetwork(t *testing.T) {
 		t.Fatal("message did not route properly")
 	}
 }
+
+func TestClusterAbandon(t *testing.T) {
+	dir, err := ioutil.TempDir("", "mailbox")
+	if err != nil {
+		panic(err)
+	}
+
+	defer os.RemoveAll(dir)
+
+	cn, err := NewMemClusterNode(dir)
+	if err != nil {
+		panic(err)
+	}
+
+	defer cn.Close()
+
+	err = cn.Declare("a")
+	if err != nil {
+		panic(err)
+	}
+
+	payload := Msg([]byte("hello"))
+
+	err = cn.Push("a", payload)
+	if err != nil {
+		panic(err)
+	}
+
+	err = cn.Abandon("a")
+	if err != nil {
+		panic(err)
+	}
+
+	err = cn.Push("a", payload)
+	if err == nil {
+		t.Fatal("queue was not abondoned")
+	}
+}

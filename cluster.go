@@ -39,6 +39,11 @@ func (cn *clusterNode) Declare(name string) error {
 	return nil
 }
 
+func (cn *clusterNode) Abandon(name string) error {
+	cn.local.Abandon(name)
+	return cn.router.Remove(name)
+}
+
 func (cn *clusterNode) Push(name string, msg *Message) error {
 	return cn.router.Push(name, msg)
 }

@@ -197,3 +197,39 @@ func TestConsulRoutingTableWithMultiPicksUpChanges(t *testing.T) {
 		t.Fatal("pusher doesn't have 3 servers")
 	}
 }
+
+func TestConsulRoutingTableRemove(t *testing.T) {
+	m1 := NewMemRegistry()
+
+	ct1, err := NewConsulRoutingTable("127.0.0.1:8899")
+	if err != nil {
+		panic(err)
+	}
+
+	defer ct1.Cleanup()
+
+	ct2, err := NewConsulRoutingTable("127.0.0.1:9900")
+	if err != nil {
+		panic(err)
+	}
+
+	ct1.Set("a", m1)
+
+	// propogation delay.
+	time.Sleep(100 * time.Millisecond)
+
+	_, ok := ct2.Get("a")
+	if !ok {
+		t.Fatal("couldn't find a")
+	}
+
+	ct1.Remove("a")
+
+	// propogation delay.
+	time.Sleep(100 * time.Millisecond)
+
+	_, ok = ct2.Get("a")
+	if ok {
+		t.Fatal("remove failed")
+	}
+}

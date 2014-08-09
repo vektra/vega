@@ -7,6 +7,11 @@ func (ht MemRouteTable) Set(name string, st Pusher) error {
 	return nil
 }
 
+func (ht MemRouteTable) Remove(name string) error {
+	delete(ht, name)
+	return nil
+}
+
 func (ht MemRouteTable) Get(name string) (Pusher, bool) {
 	s, ok := ht[name]
 	return s, ok
@@ -26,6 +31,10 @@ func MemRouter() *Router {
 
 func (r *Router) Add(name string, reg Pusher) {
 	r.routes.Set(name, reg)
+}
+
+func (r *Router) Remove(name string) error {
+	return r.routes.Remove(name)
 }
 
 func (r *Router) DiscoverEndpoint(name string) (Pusher, bool) {

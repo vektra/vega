@@ -134,3 +134,84 @@ func TestClientReconnects(t *testing.T) {
 		t.Fatal("message was lost")
 	}
 }
+
+func TestServiceAbandon(t *testing.T) {
+	serv, err := NewMemService(cPort)
+	if err != nil {
+		panic(err)
+	}
+
+	defer serv.Close()
+
+	c1, err := Dial(cPort)
+	if err != nil {
+		panic(err)
+	}
+
+	defer c1.Close()
+
+	c2, err := Dial(cPort)
+	if err != nil {
+		panic(err)
+	}
+
+	defer c2.Close()
+
+	c1.Declare("a")
+
+	payload := Msg([]byte("hello"))
+
+	err = c2.Push("a", payload)
+	if err != nil {
+		panic(err)
+	}
+
+	err = c1.Abandon("a")
+	if err != nil {
+		panic(err)
+	}
+
+	err = c2.Push("a", payload)
+	if err == nil {
+		t.Fatal("queue was not deleted")
+	}
+}
+
+func TestServiceEphemeralDeclare(t *testing.T) {
+	serv, err := NewMemService(cPort)
+	if err != nil {
+		panic(err)
+	}
+
+	defer serv.Close()
+
+	c1, err := Dial(cPort)
+	if err != nil {
+		panic(err)
+	}
+
+	defer c1.Close()
+
+	c2, err := Dial(cPort)
+	if err != nil {
+		panic(err)
+	}
+
+	defer c2.Close()
+
+	c1.EphemeralDeclare("e-a")
+
+	payload := Msg([]byte("hello"))
+
+	err = c2.Push("e-a", payload)
+	if err != nil {
+		panic(err)
+	}
+
+	c1.Close()
+
+	err = c2.Push("e-a", payload)
+	if err == nil {
+		t.Fatal("queue was not deleted")
+	}
+}
