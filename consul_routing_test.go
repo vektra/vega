@@ -80,7 +80,7 @@ func TestConsulRoutingTableWithMultipleDeclares(t *testing.T) {
 
 	defer ct2.Cleanup()
 
-	ct3, err := NewConsulRoutingTable("127.0.0.1:9900")
+	ct3, err := NewConsulRoutingTable("127.0.0.1:9911")
 	if err != nil {
 		panic(err)
 	}

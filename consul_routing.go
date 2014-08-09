@@ -1,6 +1,7 @@
 package mailbox
 
 import (
+	"bytes"
 	"crypto/sha1"
 	"encoding/hex"
 
@@ -108,6 +109,10 @@ func (ct *consulRoutingTable) Get(name string) (Pusher, bool) {
 	}
 
 	if len(values) == 1 {
+		if bytes.Equal(values[0].Value, ct.selfId) {
+			return nil, false
+		}
+
 		id := string(values[0].Value)
 
 		if cp, ok := ct.connections[id]; ok {
@@ -130,6 +135,10 @@ func (ct *consulRoutingTable) Get(name string) (Pusher, bool) {
 	for _, val := range values {
 		id := string(val.Value)
 
+		if bytes.Equal(val.Value, ct.selfId) {
+			continue
+		}
+
 		if cp, ok := ct.connections[id]; ok {
 			mp.Add(cp)
 		} else {
@@ -141,6 +150,14 @@ func (ct *consulRoutingTable) Get(name string) (Pusher, bool) {
 
 			mp.Add(cp)
 		}
+	}
+
+	if len(mp.pushers) == 1 {
+		sp := mp.pushers[0]
+
+		ct.cache[name] = &cachedPusher{clock, sp}
+
+		return sp, true
 	}
 
 	ct.cache[name] = &cachedPusher{clock, mp}
