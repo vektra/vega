@@ -10,6 +10,15 @@ func NewMemMailbox(name string) Mailbox {
 	return &MemMailbox{name, nil, nil}
 }
 
+func (mm *MemMailbox) Abandon() error {
+	mm.values = nil
+	for _, w := range mm.watchers {
+		w <- nil
+	}
+
+	return nil
+}
+
 func (mm *MemMailbox) Poll() (*Message, error) {
 	if len(mm.values) > 0 {
 		val := mm.values[0]

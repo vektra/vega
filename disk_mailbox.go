@@ -50,6 +50,52 @@ type mailboxHeader struct {
 	ReadIndex, WriteIndex, Size int
 }
 
+func (m *diskMailbox) Abandon() error {
+	m.Lock()
+	defer m.Unlock()
+
+	for _, w := range m.watchers {
+		w <- nil
+	}
+
+	ro := levigo.NewReadOptions()
+
+	db := m.disk.db
+
+	data, err := db.Get(ro, m.prefix)
+	if err != nil {
+		return err
+	}
+
+	if len(data) == 0 {
+		return nil
+	}
+
+	var header mailboxHeader
+
+	err = json.Unmarshal(data, &header)
+	if err != nil {
+		return err
+	}
+
+	wo := levigo.NewWriteOptions()
+
+	for i := header.ReadIndex; i < header.ReadIndex+header.Size; i++ {
+		key := append(m.prefix, []byte(strconv.Itoa(i))...)
+
+		db.Delete(wo, key)
+	}
+
+	wo.SetSync(true)
+
+	err = db.Delete(wo, m.prefix)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
 func (m *diskMailbox) Poll() (*Message, error) {
 	m.Lock()
 	defer m.Unlock()

@@ -7,6 +7,7 @@ type MailboxStats struct {
 }
 
 type Mailbox interface {
+	Abandon() error
 	Push(*Message) error
 	Poll() (*Message, error)
 	AddWatcher() <-chan *Message

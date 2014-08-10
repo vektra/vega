@@ -101,7 +101,10 @@ func (r *Registry) Abandon(name string) error {
 	r.Lock()
 	defer r.Unlock()
 
-	delete(r.mailboxes, name)
+	if m, ok := r.mailboxes[name]; ok {
+		m.Abandon()
+		delete(r.mailboxes, name)
+	}
 
 	return nil
 }

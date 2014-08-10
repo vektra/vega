@@ -4,6 +4,8 @@ import (
 	"io/ioutil"
 	"os"
 	"testing"
+
+	"github.com/jmhodges/levigo"
 )
 
 func TestDiskMailboxPush(t *testing.T) {
@@ -206,5 +208,76 @@ func TestDiskMailboxPersists(t *testing.T) {
 
 	if !ret.Equal(msg) {
 		t.Fatal("couldn't pull the message out")
+	}
+}
+
+func TestDiskMailboxAbandon(t *testing.T) {
+	dir, err := ioutil.TempDir("", "mailbox")
+	if err != nil {
+		panic(err)
+	}
+
+	defer os.RemoveAll(dir)
+
+	r, err := NewDiskStorage(dir)
+	if err != nil {
+		panic(err)
+	}
+
+	m := r.Mailbox("a")
+
+	err = m.Push(Msg([]byte("hello")))
+	if err != nil {
+		panic(err)
+	}
+
+	ro := levigo.NewReadOptions()
+
+	data, err := r.db.Get(ro, []byte("a0"))
+	if err != nil {
+		panic(err)
+	}
+
+	if len(data) == 0 {
+		t.Fatal("mailbox was not setup")
+	}
+
+	m.Abandon()
+
+	data, err = r.db.Get(ro, []byte("a0"))
+	if err != nil {
+		panic(err)
+	}
+
+	if len(data) != 0 {
+		t.Fatal("mailbox was not deleted")
+	}
+}
+func TestDiskMailboxInformsWatchersOnAbandon(t *testing.T) {
+	dir, err := ioutil.TempDir("", "mailbox")
+	if err != nil {
+		panic(err)
+	}
+
+	defer os.RemoveAll(dir)
+
+	r, err := NewDiskStorage(dir)
+	if err != nil {
+		panic(err)
+	}
+
+	m := r.Mailbox("a")
+
+	watch := m.AddWatcher()
+
+	m.Abandon()
+
+	select {
+	case ret := <-watch:
+		if ret != nil {
+			t.Fatal("wrong message")
+		}
+	default:
+		t.Fatal("watch didn't get value")
 	}
 }
