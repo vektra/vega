@@ -147,6 +147,7 @@ func TestClusterRoutesViaNetwork(t *testing.T) {
 	}
 
 	defer s1.Close()
+	go s1.Accept()
 
 	s2, err := NewService(cPort2, cn2)
 	if err != nil {
@@ -154,6 +155,7 @@ func TestClusterRoutesViaNetwork(t *testing.T) {
 	}
 
 	defer s2.Close()
+	go s2.Accept()
 
 	// Wire up a client going to s1
 

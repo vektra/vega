@@ -26,6 +26,7 @@ func TestConsulNode(t *testing.T) {
 	}
 
 	defer cn1.Close()
+	go cn1.Accept()
 
 	dir2, err := ioutil.TempDir("", "mailbox")
 	if err != nil {
@@ -43,7 +44,9 @@ func TestConsulNode(t *testing.T) {
 	if err != nil {
 		panic(err)
 	}
+
 	defer cn2.Close()
+	go cn2.Accept()
 
 	cn1.Declare("a")
 

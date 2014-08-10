@@ -44,6 +44,7 @@ func TestConsulPusher(t *testing.T) {
 	}
 
 	defer serv.Close()
+	go serv.Accept()
 
 	cp := &consulPusher{nil, cPort}
 

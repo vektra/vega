@@ -77,3 +77,7 @@ func NewConsulClusterNode(config *ConsulNodeConfig) (*ConsulClusterNode, error) 
 
 	return &ConsulClusterNode{cn, config, serv}, err
 }
+
+func (cn *ConsulClusterNode) Accept() error {
+	return cn.service.Accept()
+}

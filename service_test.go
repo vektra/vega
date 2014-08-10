@@ -16,6 +16,7 @@ func TestServicePushAndPoll(t *testing.T) {
 	}
 
 	defer serv.Close()
+	go serv.Accept()
 
 	c1, err := Dial(cPort)
 	if err != nil {
@@ -63,6 +64,7 @@ func TestServiceLongPoll(t *testing.T) {
 	}
 
 	defer serv.Close()
+	go serv.Accept()
 
 	c1, err := Dial(cPort)
 	if err != nil {
@@ -109,6 +111,7 @@ func TestClientReconnects(t *testing.T) {
 	}
 
 	defer serv.Close()
+	go serv.Accept()
 
 	c1, err := Dial(cPort)
 	if err != nil {
@@ -142,6 +145,7 @@ func TestServiceAbandon(t *testing.T) {
 	}
 
 	defer serv.Close()
+	go serv.Accept()
 
 	c1, err := Dial(cPort)
 	if err != nil {
@@ -184,6 +188,7 @@ func TestServiceEphemeralDeclare(t *testing.T) {
 	}
 
 	defer serv.Close()
+	go serv.Accept()
 
 	c1, err := Dial(cPort)
 	if err != nil {

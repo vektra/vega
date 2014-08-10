@@ -46,8 +46,6 @@ func NewService(addr string, reg Storage) (*Service, error) {
 
 	s.wg.Add(1)
 
-	go s.Accept()
-
 	return s, nil
 }
 
