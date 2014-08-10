@@ -328,7 +328,7 @@ type Client struct {
 	addr string
 }
 
-func Dial(addr string) (*Client, error) {
+func NewClient(addr string) (*Client, error) {
 	cl := &Client{nil, nil, addr}
 
 	cl.Session()

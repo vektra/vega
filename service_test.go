@@ -18,14 +18,14 @@ func TestServicePushAndPoll(t *testing.T) {
 	defer serv.Close()
 	go serv.Accept()
 
-	c1, err := Dial(cPort)
+	c1, err := NewClient(cPort)
 	if err != nil {
 		panic(err)
 	}
 
 	defer c1.Close()
 
-	c2, err := Dial(cPort)
+	c2, err := NewClient(cPort)
 	if err != nil {
 		panic(err)
 	}
@@ -66,14 +66,14 @@ func TestServiceLongPoll(t *testing.T) {
 	defer serv.Close()
 	go serv.Accept()
 
-	c1, err := Dial(cPort)
+	c1, err := NewClient(cPort)
 	if err != nil {
 		panic(err)
 	}
 
 	defer c1.Close()
 
-	c2, err := Dial(cPort)
+	c2, err := NewClient(cPort)
 	if err != nil {
 		panic(err)
 	}
@@ -113,7 +113,7 @@ func TestClientReconnects(t *testing.T) {
 	defer serv.Close()
 	go serv.Accept()
 
-	c1, err := Dial(cPort)
+	c1, err := NewClient(cPort)
 	if err != nil {
 		panic(err)
 	}
@@ -147,14 +147,14 @@ func TestServiceAbandon(t *testing.T) {
 	defer serv.Close()
 	go serv.Accept()
 
-	c1, err := Dial(cPort)
+	c1, err := NewClient(cPort)
 	if err != nil {
 		panic(err)
 	}
 
 	defer c1.Close()
 
-	c2, err := Dial(cPort)
+	c2, err := NewClient(cPort)
 	if err != nil {
 		panic(err)
 	}
@@ -190,14 +190,14 @@ func TestServiceEphemeralDeclare(t *testing.T) {
 	defer serv.Close()
 	go serv.Accept()
 
-	c1, err := Dial(cPort)
+	c1, err := NewClient(cPort)
 	if err != nil {
 		panic(err)
 	}
 
 	defer c1.Close()
 
-	c2, err := Dial(cPort)
+	c2, err := NewClient(cPort)
 	if err != nil {
 		panic(err)
 	}

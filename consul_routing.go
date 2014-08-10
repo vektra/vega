@@ -196,7 +196,7 @@ func (ct *consulRoutingTable) Cleanup() error {
 }
 
 func (cp *consulPusher) Connect() error {
-	c, err := Dial(cp.target)
+	c, err := NewClient(cp.target)
 	if err != nil {
 		return err
 	}

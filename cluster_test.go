@@ -159,7 +159,7 @@ func TestClusterRoutesViaNetwork(t *testing.T) {
 
 	// Wire up a client going to s1
 
-	toS1, err := Dial(cPort)
+	toS1, err := NewClient(cPort)
 	if err != nil {
 		panic(err)
 	}
@@ -169,7 +169,7 @@ func TestClusterRoutesViaNetwork(t *testing.T) {
 
 	// Push data into cn2 and see it show up in cn
 
-	toS2, err := Dial(cPort2)
+	toS2, err := NewClient(cPort2)
 	if err != nil {
 		panic(err)
 	}
