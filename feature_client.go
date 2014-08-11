@@ -22,7 +22,23 @@ func NewFeatureClient(c *Client) *FeatureClient {
 	return &FeatureClient{Client: c}
 }
 
-type Handler func(*Message) *Message
+type Handler interface {
+	HandleMessage(*Message) *Message
+}
+
+type wrappedHandlerFunc struct {
+	f func(*Message) *Message
+}
+
+func (w *wrappedHandlerFunc) HandleMessage(m *Message) *Message {
+	return w.f(m)
+}
+
+func HandlerFunc(h func(*Message) *Message) Handler {
+	return &wrappedHandlerFunc{h}
+}
+
+// type Handler func(*Message) *Message
 
 // Wraps Client to provide highlevel behaviors that build on the basics
 // of the distributed mailboxes. Should only be used by one goroutine
@@ -83,7 +99,7 @@ func (fc *FeatureClient) HandleRequests(name string, h Handler) error {
 			continue
 		}
 
-		ret := h(msg)
+		ret := h.HandleMessage(msg)
 
 		fc.Push(msg.ReplyTo, ret)
 	}

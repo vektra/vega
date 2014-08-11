@@ -159,9 +159,9 @@ func TestFeatureClientRequestReply(t *testing.T) {
 
 	fc.Declare("a")
 
-	go fc.HandleRequests("a", func(req *Message) *Message {
+	go fc.HandleRequests("a", HandlerFunc(func(req *Message) *Message {
 		return Msg("hey!")
-	})
+	}))
 
 	resp, err := fc2.Request("a", Msg("hello"))
 	if err != nil {
