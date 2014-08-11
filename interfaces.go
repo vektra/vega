@@ -31,3 +31,7 @@ type RouteTable interface {
 	Remove(string) error
 	Get(string) (Pusher, bool)
 }
+
+type Byter interface {
+	Bytes() []byte
+}

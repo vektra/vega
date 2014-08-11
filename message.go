@@ -2,6 +2,7 @@ package mailbox
 
 import (
 	"bytes"
+	"fmt"
 	"time"
 
 	"github.com/ugorji/go/codec"
@@ -30,6 +31,7 @@ type Message struct {
 	Body []byte `codec:body,omitempty`
 }
 
+// Add an application header
 func (m *Message) AddHeader(name string, val interface{}) {
 	if m.Headers == nil {
 		m.Headers = make(map[string]interface{})
@@ -38,13 +40,28 @@ func (m *Message) AddHeader(name string, val interface{}) {
 	m.Headers[name] = val
 }
 
+// Retreive an application header
 func (m *Message) GetHeader(name string) (interface{}, bool) {
 	v, ok := m.Headers[name]
 	return v, ok
 }
 
-func Msg(body []byte) *Message {
-	return &Message{Body: body}
+// Create a message with a body
+func Msg(body interface{}) *Message {
+	var bytes []byte
+
+	switch subject := body.(type) {
+	case string:
+		bytes = []byte(subject)
+	case []byte:
+		bytes = subject
+	case Byter:
+		bytes = subject.Bytes()
+	default:
+		panic(fmt.Sprintf("No convertion to bytes for %T", subject))
+	}
+
+	return &Message{Body: bytes}
 }
 
 func (m *Message) Equal(m2 *Message) bool {
