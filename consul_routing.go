@@ -14,6 +14,7 @@ import (
 type cachedPusher struct {
 	clock  cache.ClockValue
 	pusher Pusher
+	nodes  int
 }
 
 type consulRoutingTable struct {
@@ -112,7 +113,11 @@ func (ct *consulRoutingTable) Get(name string) (Pusher, bool) {
 	if cp, ok := ct.cache[name]; ok {
 		if cp.clock >= clock {
 			debugf("using cached value to: %d >= %d\n", cp.clock, clock)
-			return cp.pusher, true
+			if cp.nodes != len(values) {
+				debugf("ignoring cached multipusher, # values don't matcher")
+			} else {
+				return cp.pusher, true
+			}
 		} else {
 			debugf("ignoring cached value to: %d < %d\n", cp.clock, clock)
 		}
@@ -135,7 +140,7 @@ func (ct *consulRoutingTable) Get(name string) (Pusher, bool) {
 
 		cp.Connect()
 
-		ct.cache[name] = &cachedPusher{clock, cp}
+		ct.cache[name] = &cachedPusher{clock, cp, 1}
 
 		return cp, true
 	}
@@ -165,12 +170,12 @@ func (ct *consulRoutingTable) Get(name string) (Pusher, bool) {
 	if len(mp.pushers) == 1 {
 		sp := mp.pushers[0]
 
-		ct.cache[name] = &cachedPusher{clock, sp}
+		ct.cache[name] = &cachedPusher{clock, sp, 1}
 
 		return sp, true
 	}
 
-	ct.cache[name] = &cachedPusher{clock, mp}
+	ct.cache[name] = &cachedPusher{clock, mp, len(mp.pushers)}
 
 	return mp, true
 }
