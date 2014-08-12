@@ -24,18 +24,27 @@ func NewMemRegistry() *Registry {
 	return NewRegistry(NewMemMailbox)
 }
 
-func (r *Registry) Poll(name string) (*Message, error) {
+func (r *Registry) Poll(name string) (*Delivery, error) {
 	r.Lock()
 	defer r.Unlock()
 
 	if mailbox, ok := r.mailboxes[name]; ok {
-		return mailbox.Poll()
+		msg, err := mailbox.Poll()
+		if err != nil {
+			return nil, err
+		}
+
+		if msg == nil {
+			return nil, nil
+		}
+
+		return NewDelivery(mailbox, msg), nil
 	}
 
 	return nil, nil
 }
 
-func (r *Registry) LongPoll(name string, til time.Duration) (*Message, error) {
+func (r *Registry) LongPoll(name string, til time.Duration) (*Delivery, error) {
 	r.Lock()
 
 	mailbox, ok := r.mailboxes[name]
@@ -54,7 +63,7 @@ func (r *Registry) LongPoll(name string, til time.Duration) (*Message, error) {
 
 	if val != nil {
 		r.Unlock()
-		return val, nil
+		return NewDelivery(mailbox, val), nil
 	}
 
 	indicator := mailbox.AddWatcher()
@@ -63,11 +72,11 @@ func (r *Registry) LongPoll(name string, til time.Duration) (*Message, error) {
 
 	select {
 	case val := <-indicator:
-		if val != nil {
-			return val, nil
-		} else {
-			return val, nil
+		if val == nil {
+			return nil, nil
 		}
+
+		return NewDelivery(mailbox, val), nil
 	case <-time.Tick(til):
 		return nil, nil
 	}

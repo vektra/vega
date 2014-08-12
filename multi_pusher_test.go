@@ -20,7 +20,7 @@ func TestMultiPusherPush(t *testing.T) {
 	a1, _ := m1.Poll("a")
 	a2, _ := m2.Poll("a")
 
-	if a1 == nil || a2 == nil || !msg.Equal(a1) || !msg.Equal(a2) {
+	if a1 == nil || a2 == nil || !msg.Equal(a1.Message) || !msg.Equal(a2.Message) {
 		t.Fatal("message did not fan out among endpoints")
 	}
 }

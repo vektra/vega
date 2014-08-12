@@ -90,22 +90,26 @@ func (fc *FeatureClient) Declare(name string) error {
 
 func (fc *FeatureClient) HandleRequests(name string, h Handler) error {
 	for {
-		msg, err := fc.LongPoll(name, 1*time.Minute)
+		del, err := fc.LongPoll(name, 1*time.Minute)
 		if err != nil {
 			return err
 		}
 
-		if msg == nil {
+		if del == nil {
 			continue
 		}
 
+		msg := del.Message
+
 		ret := h.HandleMessage(msg)
+
+		del.Ack()
 
 		fc.Push(msg.ReplyTo, ret)
 	}
 }
 
-func (fc *FeatureClient) Request(name string, msg *Message) (*Message, error) {
+func (fc *FeatureClient) Request(name string, msg *Message) (*Delivery, error) {
 	msg.ReplyTo = fc.LocalQueue()
 
 	err := fc.Push(name, msg)
@@ -129,14 +133,14 @@ func (fc *FeatureClient) Request(name string, msg *Message) (*Message, error) {
 
 type Receiver struct {
 	// channel that messages are sent to
-	Channel <-chan *Message
+	Channel <-chan *Delivery
 
 	// Any error detected while receiving
 	Error error
 }
 
 func (fc *FeatureClient) Receive(name string) *Receiver {
-	c := make(chan *Message)
+	c := make(chan *Delivery)
 
 	rec := &Receiver{c, nil}
 

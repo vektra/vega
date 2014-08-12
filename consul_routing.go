@@ -221,7 +221,7 @@ func (cp *consulPusher) Push(name string, msg *Message) error {
 	return cp.client.Push(name, msg)
 }
 
-func (cp *consulPusher) Poll(name string) (*Message, error) {
+func (cp *consulPusher) Poll(name string) (*Delivery, error) {
 	if cp.client == nil {
 		err := cp.Connect()
 		if err != nil {

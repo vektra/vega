@@ -68,7 +68,7 @@ func TestClusterRoutes(t *testing.T) {
 
 	msg, err := memReg.Poll("a")
 
-	if msg == nil || !msg.Equal(payload) {
+	if msg == nil || !msg.Message.Equal(payload) {
 		t.Fatal("message was not stored locally")
 	}
 }
@@ -90,7 +90,7 @@ func TestClusterLongPoll(t *testing.T) {
 
 	msg := Msg([]byte("hello"))
 
-	var got *Message
+	var got *Delivery
 
 	var wg sync.WaitGroup
 
@@ -105,7 +105,7 @@ func TestClusterLongPoll(t *testing.T) {
 
 	wg.Wait()
 
-	if got == nil || !msg.Equal(got) {
+	if got == nil || !msg.Equal(got.Message) {
 		t.Fatal("long poll didn't see the value")
 	}
 }
@@ -188,7 +188,7 @@ func TestClusterRoutesViaNetwork(t *testing.T) {
 		panic(err)
 	}
 
-	if ret == nil || !ret.Equal(msg) {
+	if ret == nil || !ret.Message.Equal(msg) {
 		t.Fatal("message did not route properly")
 	}
 }

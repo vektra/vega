@@ -67,7 +67,7 @@ func TestConsulNode(t *testing.T) {
 		panic(err)
 	}
 
-	if got == nil || !got.Equal(msg) {
+	if got == nil || !got.Message.Equal(msg) {
 		t.Fatal("didn't get the message")
 	}
 }

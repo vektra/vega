@@ -26,7 +26,7 @@ func TestRegistryPoll(t *testing.T) {
 		t.Fatal("The mailbox did not get the value")
 	}
 
-	if !msg.Equal(ret) {
+	if !msg.Equal(ret.Message) {
 		t.Fatal("Wrong value")
 	}
 }
@@ -38,7 +38,7 @@ func TestLongPollRegistry(t *testing.T) {
 
 	r.Declare("a")
 
-	var got *Message
+	var got *Delivery
 
 	var wg sync.WaitGroup
 
@@ -56,7 +56,7 @@ func TestLongPollRegistry(t *testing.T) {
 
 	wg.Wait()
 
-	if !msg.Equal(got) {
+	if !msg.Equal(got.Message) {
 		t.Fatal("Wrong value")
 	}
 
@@ -67,7 +67,7 @@ func TestLongPollRegistryTimeout(t *testing.T) {
 
 	r.Declare("a")
 
-	var got *Message
+	var got *Delivery
 
 	var wg sync.WaitGroup
 

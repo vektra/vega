@@ -26,8 +26,6 @@ type Service struct {
 	closed bool
 
 	lock sync.Mutex
-
-	ephemerals map[net.Conn][]string
 }
 
 func NewService(addr string, reg Storage) (*Service, error) {
@@ -38,10 +36,9 @@ func NewService(addr string, reg Storage) (*Service, error) {
 	}
 
 	s := &Service{
-		Address:    addr,
-		Registry:   reg,
-		listener:   l,
-		ephemerals: make(map[net.Conn][]string),
+		Address:  addr,
+		Registry: reg,
+		listener: l,
 	}
 
 	s.wg.Add(1)
@@ -80,6 +77,10 @@ func eofish(err error) bool {
 		return true
 	}
 
+	if err == yamux.ErrSessionShutdown {
+		return true
+	}
+
 	if strings.Index(err.Error(), "connection reset by peer") != -1 {
 		return true
 	}
@@ -91,16 +92,32 @@ func eofish(err error) bool {
 	return false
 }
 
-func (s *Service) cleanupConn(c net.Conn) {
+func (s *Service) cleanupConn(c net.Conn, data *clientData) {
 	s.lock.Lock()
 
-	for _, name := range s.ephemerals[c] {
+	if data.inflight != nil {
+		for _, del := range data.inflight {
+			del.Nack()
+		}
+
+		data.inflight = nil
+	}
+
+	for _, name := range data.ephemerals {
 		s.Registry.Abandon(name)
 	}
 
-	delete(s.ephemerals, c)
+	data.ephemerals = nil
+
+	data.session.Close()
 
 	s.lock.Unlock()
+}
+
+type clientData struct {
+	session    *yamux.Session
+	inflight   map[MessageId]*Delivery
+	ephemerals []string
 }
 
 func (s *Service) acceptMux(c net.Conn) {
@@ -115,21 +132,25 @@ func (s *Service) acceptMux(c net.Conn) {
 
 	defer session.Close()
 
+	data := &clientData{session, make(map[MessageId]*Delivery), nil}
+
 	for {
 		stream, err := session.Accept()
 		if err != nil {
 			if eofish(err) {
+				debugf("eof detected starting a new stream\n")
+				s.cleanupConn(c, data)
 				return
 			}
 
 			panic(err)
 		}
 
-		go s.handle(c, stream)
+		go s.handle(c, stream, data)
 	}
 }
 
-func (s *Service) handle(parent, c net.Conn) {
+func (s *Service) handle(parent, c net.Conn, data *clientData) {
 	defer c.Close()
 
 	buf := []byte{0}
@@ -160,7 +181,7 @@ func (s *Service) handle(parent, c net.Conn) {
 				return
 			}
 
-			err = s.handleEphemeralDeclare(c, msg, parent)
+			err = s.handleEphemeralDeclare(c, msg, parent, data)
 		case AbandonType:
 			msg := &Abandon{}
 			dec := codec.NewDecoder(c, &msgpack)
@@ -180,19 +201,42 @@ func (s *Service) handle(parent, c net.Conn) {
 				panic(err)
 			}
 
-			err = s.handlePoll(c, msg)
+			err = s.handlePoll(c, msg, data)
 		case LongPollType:
 			msg := &LongPoll{}
 			dec := codec.NewDecoder(c, &msgpack)
 
 			err = dec.Decode(msg)
 			if err != nil {
+				if eofish(err) {
+					return
+				}
+
 				panic(err)
 			}
 
-			err = s.handleLongPoll(c, msg)
+			err = s.handleLongPoll(c, msg, data)
 		case PushType:
 			msg := &Push{}
+			dec := codec.NewDecoder(c, &msgpack)
+
+			err = dec.Decode(msg)
+			if err != nil {
+				if eofish(err) {
+					return
+				}
+
+				panic(err)
+			}
+
+			err = s.handlePush(c, msg)
+		case CloseType:
+			err = s.handleClose(c, parent, data)
+		case StatsType:
+			err = s.handleStats(c, data)
+
+		case AckType:
+			msg := &AckMessage{}
 			dec := codec.NewDecoder(c, &msgpack)
 
 			err = dec.Decode(msg)
@@ -200,10 +244,17 @@ func (s *Service) handle(parent, c net.Conn) {
 				return
 			}
 
-			err = s.handlePush(c, msg)
-		case CloseType:
-			err = s.handleClose(c, parent)
+			err = s.handleAck(c, msg, data)
+		case NackType:
+			msg := &NackMessage{}
+			dec := codec.NewDecoder(c, &msgpack)
 
+			err = dec.Decode(msg)
+			if err != nil {
+				return
+			}
+
+			err = s.handleNack(c, msg, data)
 		default:
 			err = EProtocolError
 		}
@@ -238,7 +289,10 @@ func (s *Service) handleDeclare(c net.Conn, msg *Declare) error {
 	return err
 }
 
-func (s *Service) handleEphemeralDeclare(c net.Conn, msg *Declare, parent net.Conn) error {
+func (s *Service) handleEphemeralDeclare(
+	c net.Conn, msg *Declare,
+	parent net.Conn, data *clientData) error {
+
 	err := s.Registry.Declare(msg.Name)
 	if err != nil {
 		return err
@@ -246,7 +300,7 @@ func (s *Service) handleEphemeralDeclare(c net.Conn, msg *Declare, parent net.Co
 
 	s.lock.Lock()
 
-	s.ephemerals[parent] = append(s.ephemerals[parent], msg.Name)
+	data.ephemerals = append(data.ephemerals, msg.Name)
 
 	s.lock.Unlock()
 
@@ -264,7 +318,7 @@ func (s *Service) handleAbandon(c net.Conn, msg *Abandon) error {
 	return err
 }
 
-func (s *Service) handlePoll(c net.Conn, msg *Poll) error {
+func (s *Service) handlePoll(c net.Conn, msg *Poll, data *clientData) error {
 	var ret PollResult
 
 	val, err := s.Registry.Poll(msg.Name)
@@ -272,14 +326,17 @@ func (s *Service) handlePoll(c net.Conn, msg *Poll) error {
 		return err
 	}
 
-	ret.Message = val
+	if val != nil {
+		data.inflight[val.Message.MessageId] = val
+		ret.Message = val.Message
+	}
 
 	c.Write([]byte{uint8(PollResultType)})
 	enc := codec.NewEncoder(c, &msgpack)
 	return enc.Encode(&ret)
 }
 
-func (s *Service) handleLongPoll(c net.Conn, msg *LongPoll) error {
+func (s *Service) handleLongPoll(c net.Conn, msg *LongPoll, data *clientData) error {
 	debugf("handleLongPoll for %#v\n", s.Registry)
 
 	dur, err := time.ParseDuration(msg.Duration)
@@ -294,7 +351,10 @@ func (s *Service) handleLongPoll(c net.Conn, msg *LongPoll) error {
 		return err
 	}
 
-	ret.Message = val
+	if val != nil {
+		data.inflight[val.Message.MessageId] = val
+		ret.Message = val.Message
+	}
 
 	c.Write([]byte{uint8(PollResultType)})
 	enc := codec.NewEncoder(c, &msgpack)
@@ -315,8 +375,56 @@ func (s *Service) handlePush(c net.Conn, msg *Push) error {
 	return err
 }
 
-func (s *Service) handleClose(c, parent net.Conn) error {
-	s.cleanupConn(parent)
+func (s *Service) handleClose(c, parent net.Conn, data *clientData) error {
+	s.cleanupConn(parent, data)
+
+	_, err := c.Write([]byte{uint8(SuccessType)})
+	return err
+}
+
+func (s *Service) handleStats(c net.Conn, data *clientData) error {
+	stats := &ClientStats{
+		InFlight: len(data.inflight),
+	}
+
+	c.Write([]byte{uint8(StatsResultType)})
+	enc := codec.NewEncoder(c, &msgpack)
+	return enc.Encode(&stats)
+}
+
+func (s *Service) handleAck(c net.Conn, msg *AckMessage, data *clientData) error {
+	if del, ok := data.inflight[msg.MessageId]; ok {
+		err := del.Ack()
+		if err != nil {
+			debugf("internal nack error: %s\n", err)
+			return err
+		}
+
+		debugf("removing %s from inflight\n", msg.MessageId)
+		delete(data.inflight, msg.MessageId)
+		debugf("inflight now: %#v\n", data.inflight)
+	} else {
+		return EUnknownMessage
+	}
+
+	_, err := c.Write([]byte{uint8(SuccessType)})
+	return err
+}
+
+func (s *Service) handleNack(c net.Conn, msg *NackMessage, data *clientData) error {
+	if del, ok := data.inflight[msg.MessageId]; ok {
+		err := del.Nack()
+		if err != nil {
+			debugf("internal nack error: %s\n", err)
+			return err
+		}
+
+		debugf("removing %s from inflight\n", msg.MessageId)
+		delete(data.inflight, msg.MessageId)
+		debugf("inflight now: %#v\n", data.inflight)
+	} else {
+		return EUnknownMessage
+	}
 
 	_, err := c.Write([]byte{uint8(SuccessType)})
 	return err
@@ -412,6 +520,57 @@ func (c *Client) Close() (err error) {
 	}
 
 	return err
+}
+
+func (c *Client) Stats() (*ClientStats, error) {
+	if c.conn == nil {
+		return nil, nil
+	}
+
+	sess, err := c.Session()
+	if err != nil {
+		return nil, err
+	}
+
+	s, err := sess.Open()
+	if err != nil {
+		return nil, err
+	}
+
+	_, err = s.Write([]byte{uint8(StatsType)})
+
+	buf := []byte{0}
+
+	_, err = io.ReadFull(s, buf)
+	if err != nil {
+		return nil, err
+	}
+
+	switch MessageType(buf[0]) {
+	case StatsResultType:
+		dec := codec.NewDecoder(s, &msgpack)
+
+		var res ClientStats
+
+		if err := dec.Decode(&res); err != nil {
+			return nil, c.checkError(err)
+		}
+
+		return &res, nil
+	case ErrorType:
+		var msgerr Error
+
+		err = codec.NewDecoder(s, &msgpack).Decode(&msgerr)
+		if err != nil {
+			return nil, c.checkError(err)
+		}
+
+		return nil, errors.New(msgerr.Error)
+	case SuccessType:
+		return nil, nil
+	default:
+		return nil, c.checkError(EProtocolError)
+	}
 }
 
 func (c *Client) Declare(name string) error {
@@ -573,7 +732,112 @@ func (c *Client) Abandon(name string) error {
 	}
 }
 
-func (c *Client) Poll(name string) (*Message, error) {
+func (c *Client) ack(id MessageId) error {
+	sess, err := c.Session()
+	if err != nil {
+		return err
+	}
+
+	s, err := sess.Open()
+	if err != nil {
+		return err
+	}
+
+	defer s.Close()
+
+	_, err = s.Write([]byte{uint8(AckType)})
+	if err != nil {
+		return c.checkError(err)
+	}
+
+	enc := codec.NewEncoder(s, &msgpack)
+
+	msg := AckMessage{
+		MessageId: id,
+	}
+
+	if err := enc.Encode(&msg); err != nil {
+		return c.checkError(err)
+	}
+
+	buf := []byte{0}
+
+	_, err = io.ReadFull(s, buf)
+	if err != nil {
+		return c.checkError(err)
+	}
+
+	switch MessageType(buf[0]) {
+	case ErrorType:
+		var msgerr Error
+
+		err = codec.NewDecoder(s, &msgpack).Decode(&msgerr)
+		if err != nil {
+			return c.checkError(err)
+		}
+
+		return errors.New(msgerr.Error)
+	case SuccessType:
+		return nil
+	default:
+		return c.checkError(EProtocolError)
+	}
+}
+
+func (c *Client) nack(id MessageId) error {
+	sess, err := c.Session()
+	if err != nil {
+		return err
+	}
+
+	s, err := sess.Open()
+	if err != nil {
+		return err
+	}
+
+	defer s.Close()
+
+	_, err = s.Write([]byte{uint8(NackType)})
+	if err != nil {
+		return c.checkError(err)
+	}
+
+	enc := codec.NewEncoder(s, &msgpack)
+
+	msg := NackMessage{
+		MessageId: id,
+	}
+
+	if err := enc.Encode(&msg); err != nil {
+		return c.checkError(err)
+	}
+
+	buf := []byte{0}
+
+	_, err = io.ReadFull(s, buf)
+	if err != nil {
+		return c.checkError(err)
+	}
+
+	switch MessageType(buf[0]) {
+	case ErrorType:
+		var msgerr Error
+
+		err = codec.NewDecoder(s, &msgpack).Decode(&msgerr)
+		if err != nil {
+			return c.checkError(err)
+		}
+
+		return errors.New(msgerr.Error)
+	case SuccessType:
+		return nil
+	default:
+		return c.checkError(EProtocolError)
+	}
+
+}
+
+func (c *Client) Poll(name string) (*Delivery, error) {
 	sess, err := c.Session()
 	if err != nil {
 		return nil, err
@@ -627,13 +891,23 @@ func (c *Client) Poll(name string) (*Message, error) {
 			return nil, c.checkError(err)
 		}
 
-		return res.Message, nil
+		if res.Message == nil {
+			return nil, nil
+		}
+
+		del := &Delivery{
+			Message: res.Message,
+			Ack:     func() error { return c.ack(res.Message.MessageId) },
+			Nack:    func() error { return c.nack(res.Message.MessageId) },
+		}
+
+		return del, nil
 	default:
 		return nil, c.checkError(EProtocolError)
 	}
 }
 
-func (c *Client) LongPoll(name string, til time.Duration) (*Message, error) {
+func (c *Client) LongPoll(name string, til time.Duration) (*Delivery, error) {
 	sess, err := c.Session()
 	if err != nil {
 		return nil, err
@@ -688,7 +962,17 @@ func (c *Client) LongPoll(name string, til time.Duration) (*Message, error) {
 			return nil, c.checkError(err)
 		}
 
-		return res.Message, nil
+		if res.Message == nil {
+			return nil, nil
+		}
+
+		del := &Delivery{
+			Message: res.Message,
+			Ack:     func() error { return c.ack(res.Message.MessageId) },
+			Nack:    func() error { return c.nack(res.Message.MessageId) },
+		}
+
+		return del, nil
 	default:
 		return nil, c.checkError(EProtocolError)
 	}

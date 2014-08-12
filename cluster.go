@@ -48,10 +48,10 @@ func (cn *clusterNode) Push(name string, msg *Message) error {
 	return cn.router.Push(name, msg)
 }
 
-func (cn *clusterNode) Poll(name string) (*Message, error) {
+func (cn *clusterNode) Poll(name string) (*Delivery, error) {
 	return cn.local.Poll(name)
 }
 
-func (cn *clusterNode) LongPoll(name string, til time.Duration) (*Message, error) {
+func (cn *clusterNode) LongPoll(name string, til time.Duration) (*Delivery, error) {
 	return cn.local.LongPoll(name, til)
 }

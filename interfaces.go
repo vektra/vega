@@ -22,12 +22,29 @@ type Mailbox interface {
 	Stats() *MailboxStats
 }
 
+type Acker func() error
+type Nacker func() error
+
+type Delivery struct {
+	Message *Message
+	Ack     Acker
+	Nack    Nacker
+}
+
+func NewDelivery(m Mailbox, msg *Message) *Delivery {
+	return &Delivery{
+		Message: msg,
+		Ack:     func() error { return m.Ack(msg.MessageId) },
+		Nack:    func() error { return m.Nack(msg.MessageId) },
+	}
+}
+
 type Storage interface {
 	Declare(string) error
 	Abandon(string) error
 	Push(string, *Message) error
-	Poll(string) (*Message, error)
-	LongPoll(string, time.Duration) (*Message, error)
+	Poll(string) (*Delivery, error)
+	LongPoll(string, time.Duration) (*Delivery, error)
 }
 
 type Pusher interface {

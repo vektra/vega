@@ -14,6 +14,10 @@ const (
 	LongPollType
 	PushType
 	CloseType
+	NackType
+	AckType
+	StatsType
+	StatsResultType
 )
 
 type Error struct {
@@ -44,4 +48,16 @@ type PollResult struct {
 type Push struct {
 	Name    string
 	Message *Message
+}
+
+type NackMessage struct {
+	MessageId MessageId
+}
+
+type AckMessage struct {
+	MessageId MessageId
+}
+
+type ClientStats struct {
+	InFlight int
 }

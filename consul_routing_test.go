@@ -58,7 +58,7 @@ func TestConsulPusher(t *testing.T) {
 
 	msg, err := cp.Poll("a")
 
-	if msg == nil || !msg.Equal(payload) {
+	if msg == nil || !msg.Message.Equal(payload) {
 		t.Fatal("couldn't talk to the service")
 	}
 }

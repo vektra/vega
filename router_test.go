@@ -35,7 +35,7 @@ func TestRouterPush(t *testing.T) {
 
 	res, _ := r.Poll("a")
 
-	if !res.Equal(msg) {
+	if !res.Message.Equal(msg) {
 		t.Fatal("router didn't route")
 	}
 }

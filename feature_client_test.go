@@ -67,7 +67,7 @@ func TestFeatureClientReceiveChannel(t *testing.T) {
 
 	select {
 	case got := <-fc.Receive("a").Channel:
-		if !got.Equal(msg) {
+		if !got.Message.Equal(msg) {
 			t.Fatal("got the wrong message")
 		}
 	case <-time.Tick(1 * time.Second):
@@ -109,7 +109,7 @@ func TestFeatureClientReceiveChannelProvidesManyValues(t *testing.T) {
 					return
 				}
 
-				messages = append(messages, msg)
+				messages = append(messages, msg.Message)
 
 				if len(messages) == 3 {
 					return
@@ -168,7 +168,7 @@ func TestFeatureClientRequestReply(t *testing.T) {
 		panic(err)
 	}
 
-	if !bytes.Equal(resp.Body, []byte("hey!")) {
+	if !bytes.Equal(resp.Message.Body, []byte("hey!")) {
 		t.Fatal("didn't get the response")
 	}
 }
