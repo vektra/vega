@@ -137,26 +137,41 @@ type Receiver struct {
 
 	// Any error detected while receiving
 	Error error
+
+	shutdown chan struct{}
+}
+
+func (rec *Receiver) Close() error {
+	close(rec.shutdown)
+	return nil
 }
 
 func (fc *FeatureClient) Receive(name string) *Receiver {
 	c := make(chan *Delivery)
 
-	rec := &Receiver{c, nil}
+	rec := &Receiver{c, nil, make(chan struct{})}
 
 	go func() {
 		for {
-			msg, err := fc.Client.LongPoll(name, 1*time.Minute)
-			if err != nil {
+			select {
+			case <-rec.shutdown:
 				close(c)
 				return
-			}
+			default:
+				// We don't cancel this action if Receive is told to Close. Instead
+				// we let it timeout and then detect the shutdown request and exit.
+				msg, err := fc.Client.LongPoll(name, 1*time.Minute)
+				if err != nil {
+					close(c)
+					return
+				}
 
-			if msg == nil {
-				continue
-			}
+				if msg == nil {
+					continue
+				}
 
-			c <- msg
+				c <- msg
+			}
 		}
 	}()
 

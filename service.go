@@ -16,6 +16,8 @@ var msgpack codec.MsgpackHandle
 
 var EProtocolError = errors.New("protocol error")
 
+var muxConfig = yamux.DefaultConfig()
+
 type Service struct {
 	Address  string
 	Registry Storage
@@ -25,7 +27,8 @@ type Service struct {
 	wg     sync.WaitGroup
 	closed bool
 
-	lock sync.Mutex
+	shutdown chan struct{}
+	lock     sync.Mutex
 }
 
 func NewService(addr string, reg Storage) (*Service, error) {
@@ -35,10 +38,12 @@ func NewService(addr string, reg Storage) (*Service, error) {
 		return nil, err
 	}
 
+	debugf("start service...\n")
 	s := &Service{
 		Address:  addr,
 		Registry: reg,
 		listener: l,
+		shutdown: make(chan struct{}),
 	}
 
 	s.wg.Add(1)
@@ -51,9 +56,12 @@ func NewMemService(addr string) (*Service, error) {
 }
 
 func (s *Service) Close() error {
+	debugf("beginning shutdown\n")
 	s.closed = true
+	close(s.shutdown)
 	s.listener.Close()
 	s.wg.Wait()
+	debugf("finished shutdown\n")
 	return nil
 }
 
@@ -66,6 +74,7 @@ func (s *Service) Accept() error {
 			return err
 		}
 
+		s.wg.Add(1)
 		go s.acceptMux(conn)
 	}
 
@@ -120,8 +129,15 @@ type clientData struct {
 	ephemerals []string
 }
 
+type acceptStream struct {
+	stream *yamux.Stream
+	err    error
+}
+
 func (s *Service) acceptMux(c net.Conn) {
-	session, err := yamux.Server(c, nil)
+	defer s.wg.Done()
+
+	session, err := yamux.Server(c, muxConfig)
 	if err != nil {
 		if eofish(err) {
 			return
@@ -132,21 +148,34 @@ func (s *Service) acceptMux(c net.Conn) {
 
 	defer session.Close()
 
+	acs := make(chan acceptStream, 1)
+
 	data := &clientData{session, make(map[MessageId]*Delivery), nil}
 
 	for {
-		stream, err := session.Accept()
-		if err != nil {
-			if eofish(err) {
-				debugf("eof detected starting a new stream\n")
-				s.cleanupConn(c, data)
-				return
+		go func() {
+			stream, err := session.AcceptStream()
+			acs <- acceptStream{stream, err}
+		}()
+
+		select {
+		case <-s.shutdown:
+			session.Close()
+			s.cleanupConn(c, data)
+			return
+		case ac := <-acs:
+			if ac.err != nil {
+				if eofish(ac.err) {
+					debugf("eof detected starting a new stream\n")
+					s.cleanupConn(c, data)
+					return
+				}
+
+				panic(ac.err)
 			}
 
-			panic(err)
+			go s.handle(c, ac.stream, data)
 		}
-
-		go s.handle(c, stream, data)
 	}
 }
 
@@ -462,7 +491,7 @@ func (c *Client) Session() (*yamux.Session, error) {
 
 		c.conn = s
 
-		sess, err := yamux.Client(c.conn, nil)
+		sess, err := yamux.Client(c.conn, muxConfig)
 		if err != nil {
 			return nil, err
 		}

@@ -1,6 +1,7 @@
 package mailbox
 
 import (
+	"io/ioutil"
 	"sync"
 	"testing"
 	"time"
@@ -8,6 +9,10 @@ import (
 
 const cPort = "127.0.0.1:34000"
 const cPort2 = "127.0.0.1:34001"
+
+func init() {
+	muxConfig.LogOutput = ioutil.Discard
+}
 
 func TestServicePushAndPoll(t *testing.T) {
 	serv, err := NewMemService(cPort)
@@ -272,6 +277,62 @@ func TestServiceClientNetworkDisconnectsAutoNack(t *testing.T) {
 	if err != nil {
 		panic(err)
 	}
+
+	del2, err := c2.Poll("a")
+	if err != nil {
+		panic(err)
+	}
+
+	if del2 == nil || !del2.Message.Equal(del.Message) {
+		t.Fatal("message was not returned again")
+	}
+}
+
+func TestServiceShutdownAutoNack(t *testing.T) {
+	reg := NewMemRegistry()
+	serv, err := NewService(cPort, reg)
+	if err != nil {
+		panic(err)
+	}
+
+	go serv.Accept()
+
+	c1, err := NewClient(cPort)
+	if err != nil {
+		panic(err)
+	}
+
+	c1.Declare("a")
+
+	payload := Msg([]byte("hello"))
+
+	c1.Push("a", payload)
+
+	del, err := c1.Poll("a")
+	if err != nil {
+		panic(err)
+	}
+
+	if del == nil {
+		t.Fatal("didn't find a message")
+	}
+
+	serv.Close()
+
+	serv, err = NewService(cPort, reg)
+	if err != nil {
+		panic(err)
+	}
+
+	defer serv.Close()
+	go serv.Accept()
+
+	c2, err := NewClient(cPort)
+	if err != nil {
+		panic(err)
+	}
+
+	defer c2.Close()
 
 	del2, err := c2.Poll("a")
 	if err != nil {

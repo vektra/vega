@@ -65,8 +65,11 @@ func TestFeatureClientReceiveChannel(t *testing.T) {
 
 	fc.Push("a", msg)
 
+	rc := fc.Receive("a")
+	defer rc.Close()
+
 	select {
-	case got := <-fc.Receive("a").Channel:
+	case got := <-rc.Channel:
 		if !got.Message.Equal(msg) {
 			t.Fatal("got the wrong message")
 		}
@@ -96,6 +99,7 @@ func TestFeatureClientReceiveChannelProvidesManyValues(t *testing.T) {
 	var messages []*Message
 
 	rc := fc.Receive("a")
+	defer rc.Close()
 
 	var wg sync.WaitGroup
 
