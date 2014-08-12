@@ -251,7 +251,20 @@ func (m *diskMailbox) Poll() (*Message, error) {
 	return DecodeMessage(data), nil
 }
 
-func (m *diskMailbox) Ack(id string) error {
+func (id MessageId) LocalIndex() string {
+	colonPos := strings.LastIndex(string(id), ":")
+	if colonPos == -1 {
+		return ""
+	}
+
+	return string(id[colonPos+1:])
+}
+
+func (id MessageId) AppendLocalIndex(idxStr string) MessageId {
+	return id + ":" + MessageId(idxStr)
+}
+
+func (m *diskMailbox) Ack(id MessageId) error {
 	m.Lock()
 	defer m.Unlock()
 
@@ -275,12 +288,12 @@ func (m *diskMailbox) Ack(id string) error {
 		return ECorruptMailbox
 	}
 
-	colonPos := strings.LastIndex(id, ":")
-	if colonPos == -1 {
+	idxStr := id.LocalIndex()
+	if idxStr == "" {
 		return EUnknownMessage
 	}
 
-	idx, err := strconv.Atoi(id[colonPos+1:])
+	idx, err := strconv.Atoi(idxStr)
 	if err != nil {
 		return err
 	}
@@ -301,7 +314,7 @@ func (m *diskMailbox) Ack(id string) error {
 		header.AckIndex++
 	}
 
-	key := append(m.prefix, []byte(id[colonPos+1:])...)
+	key := append(m.prefix, []byte(idxStr)...)
 
 	batch := levigo.NewWriteBatch()
 
@@ -327,16 +340,14 @@ func (m *diskMailbox) Ack(id string) error {
 	return nil
 }
 
-func (m *diskMailbox) Nack(id string) error {
+func (m *diskMailbox) Nack(id MessageId) error {
 	m.Lock()
 	defer m.Unlock()
 
-	colonPos := strings.LastIndex(id, ":")
-	if colonPos == -1 {
+	idxStr := id.LocalIndex()
+	if idxStr == "" {
 		return EUnknownMessage
 	}
-
-	idxStr := id[colonPos+1:]
 
 	idx, err := strconv.Atoi(idxStr)
 	if err != nil {
@@ -410,7 +421,7 @@ func (m *diskMailbox) Push(value *Message) error {
 		value.MessageId = NextMessageID()
 	}
 
-	value.MessageId = value.MessageId + ":" + idxStr
+	value.MessageId = value.MessageId.AppendLocalIndex(idxStr)
 
 	key := append(m.prefix, []byte(idxStr)...)
 

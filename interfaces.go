@@ -10,12 +10,14 @@ type MailboxStats struct {
 
 var EUnknownMessage = errors.New("Unknown message id")
 
+type MessageId string
+
 type Mailbox interface {
 	Abandon() error
 	Push(*Message) error
 	Poll() (*Message, error)
-	Ack(string) error
-	Nack(string) error
+	Ack(MessageId) error
+	Nack(MessageId) error
 	AddWatcher() <-chan *Message
 	Stats() *MailboxStats
 }

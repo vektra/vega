@@ -3,15 +3,15 @@ package mailbox
 type MemMailbox struct {
 	name     string
 	values   []*Message
-	inflight map[string]*Message
+	inflight map[MessageId]*Message
 	watchers []chan *Message
 }
 
 func NewMemMailbox(name string) Mailbox {
-	return &MemMailbox{name, nil, make(map[string]*Message), nil}
+	return &MemMailbox{name, nil, make(map[MessageId]*Message), nil}
 }
 
-func (mm *MemMailbox) Ack(id string) error {
+func (mm *MemMailbox) Ack(id MessageId) error {
 	if _, ok := mm.inflight[id]; ok {
 		delete(mm.inflight, id)
 		return nil
@@ -20,7 +20,7 @@ func (mm *MemMailbox) Ack(id string) error {
 	return EUnknownMessage
 }
 
-func (mm *MemMailbox) Nack(id string) error {
+func (mm *MemMailbox) Nack(id MessageId) error {
 	if c, ok := mm.inflight[id]; ok {
 		delete(mm.inflight, id)
 		mm.values = append([]*Message{c}, mm.values...)

@@ -24,7 +24,7 @@ type Message struct {
 	Priority        uint8     `codec:"priority,omitempty"`         // 0 to 9
 	CorrelationId   string    `codec:"correlation_id,omitempty"`   // correlation identifier
 	ReplyTo         string    `codec:"reply_to,omitempty"`         // address to to reply to
-	MessageId       string    `codec:"message_id,omitempty"`       // message identifier
+	MessageId       MessageId `codec:"message_id,omitempty"`       // message identifier
 	Timestamp       time.Time `codec:"timestamp,omitempty"`        // message timestamp
 	Type            string    `codec:"type,omitempty"`             // message type name
 	UserId          string    `codec:"user_id,omitempty"`          // creating user id
@@ -103,10 +103,10 @@ type messageIDGen struct {
 	idx  *int64
 }
 
-func (g *messageIDGen) NextMessageID() string {
+func (g *messageIDGen) NextMessageID() MessageId {
 	x := atomic.AddInt64(g.idx, 1)
 
-	return g.base + strconv.FormatInt(x, 10)
+	return MessageId(g.base + strconv.FormatInt(x, 10))
 }
 
 var globalMessageIDGen *messageIDGen
@@ -117,6 +117,6 @@ func init() {
 	globalMessageIDGen = &messageIDGen{"msg-" + generateUUIDSecure(), &i}
 }
 
-func NextMessageID() string {
+func NextMessageID() MessageId {
 	return globalMessageIDGen.NextMessageID()
 }
