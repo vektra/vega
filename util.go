@@ -1,11 +1,14 @@
 package mailbox
 
 import (
-	"crypto/rand"
+	"encoding/binary"
 	"fmt"
+	"math/rand"
 	"net"
 	"runtime"
 	"strconv"
+
+	crand "crypto/rand"
 )
 
 // Lovely borrowed from consul
@@ -17,6 +20,9 @@ import (
  * 192.168/16
  */
 var privateBlocks []*net.IPNet
+
+var randSrc rand.Source
+var randGen *rand.Rand
 
 func init() {
 	// Add each private block
@@ -38,6 +44,13 @@ func init() {
 		panic(fmt.Sprintf("Bad cidr. Got %v", err))
 	}
 	privateBlocks[2] = block
+
+	var n int64
+	binary.Read(crand.Reader, binary.BigEndian, &n)
+
+	randSrc = rand.NewSource(n)
+
+	randGen = rand.New(randSrc)
 }
 
 // Returns if the given IP is in a private block
@@ -100,7 +113,30 @@ func runtimeStats() map[string]string {
 func generateUUID() string {
 	uuid := make([]byte, 16)
 
-	if _, err := rand.Read(uuid); err != nil {
+	for i := 0; i < 16; i += 8 {
+		binary.BigEndian.PutUint64(uuid[i:i+8], uint64(randGen.Int63()))
+	}
+
+	// if _, err := rand.Read(uuid); err != nil {
+	// panic(fmt.Errorf("failed to read random bytes: %v", err))
+	// }
+
+	uuid[6] = (uuid[6] & 0x0f) | 0x40 // Version 4
+	uuid[8] = (uuid[8] & 0x3f) | 0x80 // Variant is 10
+
+	return fmt.Sprintf("%08x-%04x-%04x-%04x-%12x",
+		uuid[0:4],
+		uuid[4:6],
+		uuid[6:8],
+		uuid[8:10],
+		uuid[10:16])
+}
+
+// generateUUID is used to generate a random UUID
+func generateUUIDSecure() string {
+	uuid := make([]byte, 16)
+
+	if _, err := crand.Read(uuid); err != nil {
 		panic(fmt.Errorf("failed to read random bytes: %v", err))
 	}
 
@@ -117,4 +153,8 @@ func generateUUID() string {
 
 func RandomQueue() string {
 	return "gen-" + generateUUID()
+}
+
+func RandomID() string {
+	return "m" + generateUUID()
 }

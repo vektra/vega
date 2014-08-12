@@ -5,7 +5,6 @@ import (
 	"crypto/sha1"
 	"encoding/hex"
 
-	"net/http"
 	"sync"
 
 	"github.com/vektra/consul_kv_cache/cache"
@@ -182,19 +181,8 @@ func (ct *consulRoutingTable) Get(name string) (Pusher, bool) {
 
 func (ct *consulRoutingTable) Cleanup() error {
 	for name, _ := range ct.names {
-		url := "http://localhost:8500/v1/kv/mailbox-routing/" + name + "/" + ct.key
-
-		req, err := http.NewRequest("DELETE", url, nil)
-		if err != nil {
-			return err
-		}
-
-		resp, err := http.DefaultClient.Do(req)
-		if err != nil {
-			return err
-		}
-
-		resp.Body.Close()
+		key := name + "/" + ct.key
+		ct.consul.Delete(key)
 	}
 
 	return nil

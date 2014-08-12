@@ -1,15 +1,21 @@
 package mailbox
 
+import "errors"
 import "time"
 
 type MailboxStats struct {
-	Size int
+	Size     int
+	InFlight int
 }
+
+var EUnknownMessage = errors.New("Unknown message id")
 
 type Mailbox interface {
 	Abandon() error
 	Push(*Message) error
 	Poll() (*Message, error)
+	Ack(string) error
+	Nack(string) error
 	AddWatcher() <-chan *Message
 	Stats() *MailboxStats
 }

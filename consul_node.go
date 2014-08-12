@@ -7,6 +7,7 @@ type ConsulClusterNode struct {
 
 	Config *ConsulNodeConfig
 
+	routes  *consulRoutingTable
 	service *Service
 }
 
@@ -75,9 +76,29 @@ func NewConsulClusterNode(config *ConsulNodeConfig) (*ConsulClusterNode, error) 
 		return nil, err
 	}
 
-	return &ConsulClusterNode{cn, config, serv}, err
+	ccn := &ConsulClusterNode{
+		clusterNode: cn,
+		Config:      config,
+		routes:      ct,
+		service:     serv,
+	}
+
+	for _, name := range cn.disk.MailboxNames() {
+		ccn.Declare(name)
+	}
+
+	return ccn, nil
+}
+
+func (cn *ConsulClusterNode) Cleanup() error {
+	return cn.routes.Cleanup()
 }
 
 func (cn *ConsulClusterNode) Accept() error {
 	return cn.service.Accept()
+}
+
+func (cn *ConsulClusterNode) Close() error {
+	cn.clusterNode.Close()
+	return cn.service.Close()
 }

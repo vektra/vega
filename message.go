@@ -3,6 +3,8 @@ package mailbox
 import (
 	"bytes"
 	"fmt"
+	"strconv"
+	"sync/atomic"
 	"time"
 
 	"github.com/ugorji/go/codec"
@@ -94,4 +96,27 @@ func DecodeMessage(b []byte) *Message {
 	}
 
 	return m
+}
+
+type messageIDGen struct {
+	base string
+	idx  *int64
+}
+
+func (g *messageIDGen) NextMessageID() string {
+	x := atomic.AddInt64(g.idx, 1)
+
+	return g.base + strconv.FormatInt(x, 10)
+}
+
+var globalMessageIDGen *messageIDGen
+
+func init() {
+	i := int64(0)
+
+	globalMessageIDGen = &messageIDGen{"msg-" + generateUUIDSecure(), &i}
+}
+
+func NextMessageID() string {
+	return globalMessageIDGen.NextMessageID()
 }

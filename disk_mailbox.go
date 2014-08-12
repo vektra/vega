@@ -1,15 +1,21 @@
 package mailbox
 
 import (
-	"encoding/json"
+	"errors"
 	"strconv"
+	"strings"
 	"sync"
 
 	"github.com/jmhodges/levigo"
+	"github.com/ugorji/go/codec"
 )
+
+var ECorruptMailbox = errors.New("corrupt mailbox metadata")
 
 type diskStorage struct {
 	db *levigo.DB
+
+	lock sync.Mutex
 }
 
 func NewDiskStorage(path string) (*diskStorage, error) {
@@ -22,7 +28,7 @@ func NewDiskStorage(path string) (*diskStorage, error) {
 		return nil, err
 	}
 
-	return &diskStorage{db}, nil
+	return &diskStorage{db: db}, nil
 }
 
 func (d *diskStorage) Close() error {
@@ -38,7 +44,60 @@ type diskMailbox struct {
 	watchers []chan *Message
 }
 
+type infoHeader struct {
+	Mailboxes []string
+}
+
+func diskDataMarshal(v interface{}) ([]byte, error) {
+	var out []byte
+	err := codec.NewEncoderBytes(&out, &msgpack).Encode(v)
+	return out, err
+}
+
+func diskDataUnmarshal(data []byte, v interface{}) error {
+	return codec.NewDecoderBytes(data, &msgpack).Decode(v)
+}
+
 func (d *diskStorage) Mailbox(name string) Mailbox {
+	d.lock.Lock()
+	defer d.lock.Unlock()
+
+	ro := levigo.NewReadOptions()
+
+	db := d.db
+
+	key := []byte(":info:")
+
+	data, err := db.Get(ro, key)
+	if err != nil {
+		panic(err)
+	}
+
+	var header infoHeader
+
+	if len(data) != 0 {
+		err = diskDataUnmarshal(data, &header)
+		if err != nil {
+			panic(err)
+		}
+	}
+
+	header.Mailboxes = append(header.Mailboxes, name)
+
+	wo := levigo.NewWriteOptions()
+
+	headerData, err := diskDataMarshal(&header)
+	if err != nil {
+		panic(err)
+	}
+
+	wo.SetSync(true)
+
+	err = db.Put(wo, key, headerData)
+	if err != nil {
+		panic(err)
+	}
+
 	return &diskMailbox{
 		disk:     d,
 		prefix:   []byte(name),
@@ -46,8 +105,38 @@ func (d *diskStorage) Mailbox(name string) Mailbox {
 	}
 }
 
+func (d *diskStorage) MailboxNames() []string {
+	d.lock.Lock()
+	defer d.lock.Unlock()
+
+	ro := levigo.NewReadOptions()
+
+	db := d.db
+
+	key := []byte(":info:")
+
+	data, err := db.Get(ro, key)
+	if err != nil {
+		return nil
+	}
+
+	var header infoHeader
+
+	if len(data) != 0 {
+		err = diskDataUnmarshal(data, &header)
+		if err != nil {
+			return nil
+		}
+	}
+
+	return header.Mailboxes
+}
+
 type mailboxHeader struct {
-	ReadIndex, WriteIndex, Size int
+	AckIndex, ReadIndex, WriteIndex, Size int
+	InFlight                              int
+
+	DCMessages []int
 }
 
 func (m *diskMailbox) Abandon() error {
@@ -73,22 +162,25 @@ func (m *diskMailbox) Abandon() error {
 
 	var header mailboxHeader
 
-	err = json.Unmarshal(data, &header)
+	err = diskDataUnmarshal(data, &header)
 	if err != nil {
 		return err
 	}
 
-	wo := levigo.NewWriteOptions()
+	batch := levigo.NewWriteBatch()
 
-	for i := header.ReadIndex; i < header.ReadIndex+header.Size; i++ {
+	for i := header.AckIndex; i < header.ReadIndex+header.Size; i++ {
 		key := append(m.prefix, []byte(strconv.Itoa(i))...)
 
-		db.Delete(wo, key)
+		batch.Delete(key)
 	}
 
+	batch.Delete(m.prefix)
+
+	wo := levigo.NewWriteOptions()
 	wo.SetSync(true)
 
-	err = db.Delete(wo, m.prefix)
+	err = db.Write(wo, batch)
 	if err != nil {
 		return err
 	}
@@ -115,16 +207,27 @@ func (m *diskMailbox) Poll() (*Message, error) {
 
 	var header mailboxHeader
 
-	err = json.Unmarshal(data, &header)
+	err = diskDataUnmarshal(data, &header)
 	if err != nil {
 		return nil, err
 	}
 
-	if header.Size == 0 {
-		return nil, nil
+	var idx int
+
+	if len(header.DCMessages) > 0 {
+		idx = header.DCMessages[0]
+		header.DCMessages = header.DCMessages[1:]
+	} else {
+		if header.Size == 0 {
+			return nil, nil
+		}
+
+		idx = header.ReadIndex
+		header.ReadIndex++
+		header.Size--
 	}
 
-	key := append(m.prefix, []byte(strconv.Itoa(header.ReadIndex))...)
+	key := append(m.prefix, []byte(strconv.Itoa(idx))...)
 
 	data, err = db.Get(ro, key)
 	if err != nil {
@@ -133,15 +236,9 @@ func (m *diskMailbox) Poll() (*Message, error) {
 
 	wo := levigo.NewWriteOptions()
 
-	err = db.Delete(wo, key)
-	if err != nil {
-		return nil, err
-	}
+	header.InFlight++
 
-	header.ReadIndex++
-	header.Size--
-
-	headerData, err := json.Marshal(&header)
+	headerData, err := diskDataMarshal(&header)
 	if err != nil {
 		return nil, err
 	}
@@ -154,17 +251,96 @@ func (m *diskMailbox) Poll() (*Message, error) {
 	return DecodeMessage(data), nil
 }
 
-func (m *diskMailbox) Push(value *Message) error {
+func (m *diskMailbox) Ack(id string) error {
 	m.Lock()
 	defer m.Unlock()
 
-	if len(m.watchers) > 0 {
-		watch := m.watchers[0]
-		m.watchers = m.watchers[1:]
+	ro := levigo.NewReadOptions()
 
-		watch <- value
+	db := m.disk.db
 
-		return nil
+	data, err := db.Get(ro, m.prefix)
+	if err != nil {
+		return EUnknownMessage
+	}
+
+	if len(data) == 0 {
+		return EUnknownMessage
+	}
+
+	var header mailboxHeader
+
+	err = diskDataUnmarshal(data, &header)
+	if err != nil {
+		return ECorruptMailbox
+	}
+
+	colonPos := strings.LastIndex(id, ":")
+	if colonPos == -1 {
+		return EUnknownMessage
+	}
+
+	idx, err := strconv.Atoi(id[colonPos+1:])
+	if err != nil {
+		return err
+	}
+
+	debugf("acking message %d (AckIndex: %d)\n", idx, header.AckIndex)
+
+	if header.ReadIndex-header.AckIndex == 0 {
+		return EUnknownMessage
+	}
+
+	if idx < header.AckIndex || idx >= header.ReadIndex {
+		return EUnknownMessage
+	}
+
+	// Messages may be ack'd incontigiously. That's fine, we'll
+	// just track AckIndex as the oldest un-acked message.
+	if header.AckIndex == idx {
+		header.AckIndex++
+	}
+
+	key := append(m.prefix, []byte(id[colonPos+1:])...)
+
+	batch := levigo.NewWriteBatch()
+
+	batch.Delete(key)
+
+	header.InFlight--
+
+	headerData, err := diskDataMarshal(&header)
+	if err != nil {
+		return err
+	}
+
+	batch.Put(m.prefix, headerData)
+
+	wo := levigo.NewWriteOptions()
+	wo.SetSync(true)
+
+	err = db.Write(wo, batch)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (m *diskMailbox) Nack(id string) error {
+	m.Lock()
+	defer m.Unlock()
+
+	colonPos := strings.LastIndex(id, ":")
+	if colonPos == -1 {
+		return EUnknownMessage
+	}
+
+	idxStr := id[colonPos+1:]
+
+	idx, err := strconv.Atoi(idxStr)
+	if err != nil {
+		return err
 	}
 
 	ro := levigo.NewReadOptions()
@@ -175,29 +351,104 @@ func (m *diskMailbox) Push(value *Message) error {
 
 	data, err := db.Get(ro, m.prefix)
 	if err == nil {
-		json.Unmarshal(data, &header)
+		diskDataUnmarshal(data, &header)
 	}
 
-	key := append(m.prefix, []byte(strconv.Itoa(header.WriteIndex))...)
+	if idx < header.AckIndex || idx >= header.ReadIndex {
+		return EUnknownMessage
+	}
+
+	header.InFlight--
+
+	// optimization, nack'ing the last read message
+	if idx == header.ReadIndex-1 {
+		header.ReadIndex--
+		header.Size++
+	} else {
+		header.DCMessages = append(header.DCMessages, idx)
+	}
+
+	headerData, err := diskDataMarshal(&header)
+	if err != nil {
+		return err
+	}
 
 	wo := levigo.NewWriteOptions()
-
-	err = db.Put(wo, key, value.AsBytes())
-	if err != nil {
-		return err
-	}
-
-	header.WriteIndex++
-	header.Size++
-
-	headerData, err := json.Marshal(&header)
-	if err != nil {
-		return err
-	}
+	wo.SetSync(true)
 
 	err = db.Put(wo, m.prefix, headerData)
 	if err != nil {
-		panic(err)
+		return err
+	}
+
+	return nil
+}
+
+func (m *diskMailbox) Push(value *Message) error {
+	m.Lock()
+	defer m.Unlock()
+
+	ro := levigo.NewReadOptions()
+
+	db := m.disk.db
+
+	var header mailboxHeader
+
+	data, err := db.Get(ro, m.prefix)
+	if err == nil {
+		if len(data) > 0 {
+			err = diskDataUnmarshal(data, &header)
+			if err != nil {
+				return err
+			}
+		}
+	}
+
+	idxStr := strconv.Itoa(header.WriteIndex)
+
+	if value.MessageId == "" {
+		value.MessageId = NextMessageID()
+	}
+
+	value.MessageId = value.MessageId + ":" + idxStr
+
+	key := append(m.prefix, []byte(idxStr)...)
+
+	batch := levigo.NewWriteBatch()
+
+	batch.Put(key, value.AsBytes())
+
+	var watch chan *Message
+
+	header.WriteIndex++
+
+	if len(m.watchers) > 0 {
+		watch = m.watchers[0]
+		m.watchers = m.watchers[1:]
+
+		header.ReadIndex++
+		header.InFlight++
+	} else {
+		header.Size++
+	}
+
+	headerData, err := diskDataMarshal(&header)
+	if err != nil {
+		return err
+	}
+
+	batch.Put(m.prefix, headerData)
+
+	wo := levigo.NewWriteOptions()
+	wo.SetSync(true)
+
+	err = db.Write(wo, batch)
+	if err != nil {
+		return err
+	}
+
+	if watch != nil {
+		watch <- value
 	}
 
 	return nil
@@ -226,10 +477,11 @@ func (m *diskMailbox) Stats() *MailboxStats {
 
 	data, err := db.Get(ro, m.prefix)
 	if err == nil {
-		json.Unmarshal(data, &header)
+		diskDataUnmarshal(data, &header)
 	}
 
 	return &MailboxStats{
-		Size: header.Size,
+		Size:     header.Size + len(header.DCMessages),
+		InFlight: header.InFlight,
 	}
 }
