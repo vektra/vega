@@ -523,3 +523,47 @@ func TestDiskMailboxInformsWatchersOnAbandon(t *testing.T) {
 		t.Fatal("watch didn't get value")
 	}
 }
+
+func TestDiskMailboxWatcherIsCancelable(t *testing.T) {
+	dir, err := ioutil.TempDir("", "mailbox")
+	if err != nil {
+		panic(err)
+	}
+
+	defer os.RemoveAll(dir)
+
+	r, err := NewDiskStorage(dir)
+	if err != nil {
+		panic(err)
+	}
+
+	m := r.Mailbox("a")
+
+	done := make(chan struct{})
+
+	watch := m.AddWatcherCancelable(done)
+
+	close(done)
+
+	msg := Msg([]byte("hello"))
+
+	m.Push(msg)
+
+	select {
+	case ret := <-watch:
+		if ret != nil {
+			t.Fatal("done didn't close indicator")
+		}
+	default:
+		t.Fatal("watch didn't get value")
+	}
+
+	out, err := m.Poll()
+	if err != nil {
+		panic(err)
+	}
+
+	if out == nil || !out.Equal(msg) {
+		t.Fatal("didn't get the right message")
+	}
+}

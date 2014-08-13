@@ -2,6 +2,7 @@ package mailbox
 
 import (
 	"encoding/json"
+	"io/ioutil"
 	"net"
 	"net/http"
 	"sync"
@@ -11,7 +12,10 @@ import (
 	"github.com/ugorji/go/codec"
 )
 
+var DefaultHTTPPort = DefaultPort + 1
+
 var ctMsgPack = "application/x-msgpack"
+var ctUrlEncoded = "application/x-www-form-urlencoded"
 
 type inflightDelivery struct {
 	delivery *Delivery
@@ -20,7 +24,7 @@ type inflightDelivery struct {
 
 type HTTPService struct {
 	Address  string
-	Registry Storage
+	Registry *Registry
 
 	listener net.Listener
 	server   *http.Server
@@ -31,9 +35,12 @@ type HTTPService struct {
 	inflight     map[MessageId]*inflightDelivery
 
 	background chan struct{}
+
+	wg   sync.WaitGroup
+	done chan struct{}
 }
 
-func NewHTTPService(port string, reg Storage) *HTTPService {
+func NewHTTPService(port string, reg *Registry) *HTTPService {
 	h := &HTTPService{
 		Address:      port,
 		Registry:     reg,
@@ -41,6 +48,7 @@ func NewHTTPService(port string, reg Storage) *HTTPService {
 		defaultLease: 5 * time.Minute,
 		inflight:     make(map[MessageId]*inflightDelivery),
 		background:   make(chan struct{}, 3),
+		done:         make(chan struct{}),
 	}
 
 	h.mux.Post("/mailbox/:name", http.HandlerFunc(h.declare))
@@ -114,17 +122,25 @@ func (h *HTTPService) minimumTimeout() time.Duration {
 }
 
 func (h *HTTPService) BackgroundTimeouts() {
-	var min time.Duration
+	h.wg.Add(1)
 
-	for {
-		select {
-		case <-h.background:
-			min = h.minimumTimeout()
-		case <-time.Tick(min):
-			h.CheckTimeouts()
-			min = h.minimumTimeout()
+	go func() {
+		defer h.wg.Done()
+
+		var min time.Duration
+
+		for {
+			select {
+			case <-h.done:
+				return
+			case <-h.background:
+				min = h.minimumTimeout()
+			case <-time.Tick(min):
+				h.CheckTimeouts()
+				min = h.minimumTimeout()
+			}
 		}
-	}
+	}()
 }
 
 func (h *HTTPService) Listen() error {
@@ -138,13 +154,25 @@ func (h *HTTPService) Listen() error {
 }
 
 func (h *HTTPService) Close() {
+	h.lock.Lock()
+
+	close(h.done)
+
 	if h.listener != nil {
 		h.listener.Close()
 	}
+
+	for _, inf := range h.inflight {
+		inf.delivery.Nack()
+	}
+
+	h.lock.Unlock()
+
+	h.wg.Wait()
 }
 
 func (h *HTTPService) Accept() error {
-	return h.server.Serve(h.listener)
+	return h.server.Serve(&gracefulListener{h.listener, &h.wg})
 }
 
 func (h *HTTPService) declare(rw http.ResponseWriter, req *http.Request) {
@@ -173,9 +201,19 @@ func (h *HTTPService) push(rw http.ResponseWriter, req *http.Request) {
 	var msg Message
 	var err error
 
-	if req.Header.Get("Content-Type") == ctMsgPack {
+	contentType := req.Header.Get("Content-Type")
+
+	switch contentType {
+	case ctMsgPack:
 		err = codec.NewDecoder(req.Body, &msgpack).Decode(&msg)
-	} else {
+	case ctUrlEncoded:
+		data, le := ioutil.ReadAll(req.Body)
+		if le != nil {
+			err = le
+		} else {
+			msg.Body = data
+		}
+	default:
 		err = json.NewDecoder(req.Body).Decode(&msg)
 	}
 
@@ -208,7 +246,7 @@ func (h *HTTPService) poll(rw http.ResponseWriter, req *http.Request) {
 			return
 		}
 
-		del, err = h.Registry.LongPoll(name, dur)
+		del, err = h.Registry.LongPollCancelable(name, dur, h.done)
 	} else {
 		del, err = h.Registry.Poll(name)
 	}

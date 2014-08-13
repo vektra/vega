@@ -19,6 +19,7 @@ type Mailbox interface {
 	Ack(MessageId) error
 	Nack(MessageId) error
 	AddWatcher() <-chan *Message
+	AddWatcherCancelable(chan struct{}) <-chan *Message
 	Stats() *MailboxStats
 }
 

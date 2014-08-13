@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"sync"
 	"testing"
 	"time"
 
@@ -454,7 +455,7 @@ func TestHTTPAutoNackAfterTimeout(t *testing.T) {
 	reg := NewMemRegistry()
 	serv := NewHTTPService(cPort, reg)
 
-	go serv.BackgroundTimeouts()
+	serv.BackgroundTimeouts()
 
 	reg.Declare("a")
 
@@ -502,4 +503,93 @@ func TestHTTPAutoNackAfterTimeout(t *testing.T) {
 	if len(serv.inflight) != 1 {
 		t.Fatal("server didn't nack the message properly")
 	}
+}
+
+func TestHTTPShutdownAutoNacks(t *testing.T) {
+	reg := NewMemRegistry()
+	serv := NewHTTPService(cPort, reg)
+
+	reg.Declare("a")
+
+	msg := Msg("hello")
+
+	reg.Push("a", msg)
+
+	url := fmt.Sprintf("http://%s/mailbox/a", cPort)
+
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		panic(err)
+	}
+
+	rw := httptest.NewRecorder()
+
+	serv.mux.ServeHTTP(rw, req)
+
+	if rw.Code != 200 {
+		t.Fatalf("server had an error: %d", rw.Code)
+	}
+
+	serv.Close()
+
+	del, err := reg.Poll("a")
+	if err != nil {
+		panic(err)
+	}
+
+	if del == nil {
+		t.Fatal("shutdown did not nack inflight messages")
+	}
+}
+
+func TestHTTPShutdownHandlesLongPoll(t *testing.T) {
+	reg := NewMemRegistry()
+	serv := NewHTTPService(cPort, reg)
+
+	reg.Declare("a")
+
+	url := fmt.Sprintf("http://%s/mailbox/a?wait=1m", cPort)
+
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		panic(err)
+	}
+
+	rw := httptest.NewRecorder()
+
+	var wg sync.WaitGroup
+
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		serv.mux.ServeHTTP(rw, req)
+	}()
+
+	time.Sleep(100 * time.Millisecond)
+
+	serv.Close()
+
+	// simulate a message coming in elsewhere while shutting down
+
+	msg := Msg("hello")
+
+	reg.Push("a", msg)
+
+	time.Sleep(100 * time.Millisecond)
+
+	del, err := reg.Poll("a")
+	if err != nil {
+		panic(err)
+	}
+
+	if del == nil {
+		t.Fatal("shutdown did not nack inflight messages")
+	}
+
+	wg.Wait()
+
+	if rw.Code != 204 {
+		t.Fatalf("server had an error: %d", rw.Code)
+	}
+
 }

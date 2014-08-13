@@ -81,3 +81,53 @@ func TestLongPollRegistryTimeout(t *testing.T) {
 
 	wg.Wait()
 }
+
+func TestLongPollRegistryIsCancelable(t *testing.T) {
+	r := NewMemRegistry()
+
+	msg := Msg([]byte("hello"))
+
+	r.Declare("a")
+
+	done := make(chan struct{})
+
+	var wg sync.WaitGroup
+
+	fin := make(chan *Delivery)
+
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+
+		dur, _ := time.ParseDuration("2s")
+		got, _ := r.LongPollCancelable("a", dur, done)
+		fin <- got
+	}()
+
+	time.Sleep(100 * time.Millisecond)
+
+	close(done)
+
+	r.Push("a", msg)
+
+	select {
+	case got := <-fin:
+		if got != nil {
+			t.Fatal("cancelled long poll returned... something")
+		}
+	case <-time.Tick(1 * time.Second):
+		t.Fatal("long poll did not cancel")
+	}
+
+	wg.Wait()
+
+	try, err := r.Poll("a")
+	if err != nil {
+		panic(err)
+	}
+
+	if try == nil || !msg.Equal(try.Message) {
+		t.Fatal("Wrong value")
+	}
+
+}

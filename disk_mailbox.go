@@ -41,7 +41,7 @@ type diskMailbox struct {
 
 	disk     *diskStorage
 	prefix   []byte
-	watchers []chan *Message
+	watchers []*watchChannel
 }
 
 type infoHeader struct {
@@ -144,7 +144,7 @@ func (m *diskMailbox) Abandon() error {
 	defer m.Unlock()
 
 	for _, w := range m.watchers {
-		w <- nil
+		w.indicator <- nil
 	}
 
 	ro := levigo.NewReadOptions()
@@ -429,13 +429,24 @@ func (m *diskMailbox) Push(value *Message) error {
 
 	batch.Put(key, value.AsBytes())
 
-	var watch chan *Message
+	var watch *watchChannel
 
 	header.WriteIndex++
 
+RETRY:
 	if len(m.watchers) > 0 {
 		watch = m.watchers[0]
 		m.watchers = m.watchers[1:]
+
+		if watch.done != nil {
+			select {
+			case <-watch.done:
+				close(watch.indicator)
+				watch = nil
+				goto RETRY
+			default:
+			}
+		}
 
 		header.ReadIndex++
 		header.InFlight++
@@ -459,7 +470,8 @@ func (m *diskMailbox) Push(value *Message) error {
 	}
 
 	if watch != nil {
-		watch <- value
+		watch.indicator <- value
+		close(watch.indicator)
 	}
 
 	return nil
@@ -471,7 +483,18 @@ func (mm *diskMailbox) AddWatcher() <-chan *Message {
 
 	indicator := make(chan *Message, 1)
 
-	mm.watchers = append(mm.watchers, indicator)
+	mm.watchers = append(mm.watchers, &watchChannel{indicator, nil})
+
+	return indicator
+}
+
+func (mm *diskMailbox) AddWatcherCancelable(done chan struct{}) <-chan *Message {
+	mm.Lock()
+	defer mm.Unlock()
+
+	indicator := make(chan *Message, 1)
+
+	mm.watchers = append(mm.watchers, &watchChannel{indicator, done})
 
 	return indicator
 }

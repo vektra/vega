@@ -16,21 +16,21 @@ import (
 
 type Message struct {
 	// Simple generic headers available to be used by the application
-	Headers map[string]interface{} `codec:"headers,omitempty`
+	Headers map[string]interface{} `codec:"headers,omitempty" json:"headers,omitempty"`
 
 	// Properties
-	ContentType     string    `codec:"content_type,omitempty"`     // MIME content type
-	ContentEncoding string    `codec:"content_encoding,omitempty"` // MIME content encoding
-	Priority        uint8     `codec:"priority,omitempty"`         // 0 to 9
-	CorrelationId   string    `codec:"correlation_id,omitempty"`   // correlation identifier
-	ReplyTo         string    `codec:"reply_to,omitempty"`         // address to to reply to
-	MessageId       MessageId `codec:"message_id,omitempty"`       // message identifier
-	Timestamp       time.Time `codec:"timestamp,omitempty"`        // message timestamp
-	Type            string    `codec:"type,omitempty"`             // message type name
-	UserId          string    `codec:"user_id,omitempty"`          // creating user id
-	AppId           string    `codec:"app_id,omitempty"`           // creating application id
+	ContentType     string     `codec:"content_type,omitempty" json:"content_type,omitempty"`         // MIME content type
+	ContentEncoding string     `codec:"content_encoding,omitempty" json:"content_encoding,omitempty"` // MIME content encoding
+	Priority        uint8      `codec:"priority,omitempty" json:"priority,omitempty"`                 // 0 to 9
+	CorrelationId   string     `codec:"correlation_id,omitempty" json:"correlation_id,omitempty"`     // correlation identifier
+	ReplyTo         string     `codec:"reply_to,omitempty" json:"reply_to,omitempty"`                 // address to to reply to
+	MessageId       MessageId  `codec:"message_id,omitempty" json:"message_id,omitempty"`             // message identifier
+	Timestamp       *time.Time `codec:"timestamp,omitempty" json:"timestamp,omitempty"`               // message timestamp
+	Type            string     `codec:"type,omitempty" json:"type,omitempty"`                         // message type name
+	UserId          string     `codec:"user_id,omitempty" json:"user_id,omitempty"`                   // creating user id
+	AppId           string     `codec:"app_id,omitempty" json:"app_id,omitempty"`                     // creating application id
 
-	Body []byte `codec:body,omitempty`
+	Body []byte `codec:"body,omitempty" json:"body,omitempty"`
 }
 
 // Add an application header

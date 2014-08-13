@@ -82,6 +82,71 @@ func (r *Registry) LongPoll(name string, til time.Duration) (*Delivery, error) {
 	}
 }
 
+func (r *Registry) LongPollCancelable(name string, til time.Duration, done chan struct{}) (*Delivery, error) {
+	r.Lock()
+
+	mailbox, ok := r.mailboxes[name]
+	if !ok {
+		debugf("missing mailbox %s\n", name)
+		r.Unlock()
+		return nil, ENoMailbox
+	}
+
+	debugf("long polling %s: %#v\n", name, mailbox)
+	val, err := mailbox.Poll()
+	if err != nil {
+		r.Unlock()
+		return nil, err
+	}
+
+	if val != nil {
+		r.Unlock()
+		return NewDelivery(mailbox, val), nil
+	}
+
+	indicator := mailbox.AddWatcherCancelable(done)
+
+	r.Unlock()
+
+	select {
+	case <-done:
+		// It's possible for both done and indicator to have values.
+		// So we need to also check if there a value in indicator and
+		// if so, pull it out and nack it.
+
+		select {
+		case val := <-indicator:
+			if val != nil {
+				mailbox.Nack(val.MessageId)
+			}
+		default:
+		}
+
+		return nil, nil
+	case val := <-indicator:
+		// It's possible for both done and indicator to have values.
+		// So we need to also check if there a value in indicator and
+		// if so, pull it out and nack it.
+
+		select {
+		case <-done:
+			if val != nil {
+				mailbox.Nack(val.MessageId)
+				return nil, nil
+			}
+		default:
+		}
+
+		if val == nil {
+			return nil, nil
+		}
+
+		return NewDelivery(mailbox, val), nil
+	case <-time.Tick(til):
+		return nil, nil
+	}
+}
+
 var ENoMailbox = errors.New("No such mailbox available")
 
 func (r *Registry) Push(name string, value *Message) error {

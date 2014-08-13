@@ -168,5 +168,36 @@ func TestMailboxWatcherGoesInflight(t *testing.T) {
 	if stats.InFlight != 0 {
 		t.Fatal("ack did not work on a watched message")
 	}
+}
 
+func TestMailboxWatcherIsCancelable(t *testing.T) {
+	m := NewMemMailbox("")
+
+	done := make(chan struct{})
+
+	watch := m.AddWatcherCancelable(done)
+
+	close(done)
+
+	msg := Msg([]byte("hello"))
+
+	m.Push(msg)
+
+	select {
+	case ret := <-watch:
+		if ret != nil {
+			t.Fatal("done didn't close indicator")
+		}
+	default:
+		t.Fatal("watch didn't get value")
+	}
+
+	out, err := m.Poll()
+	if err != nil {
+		panic(err)
+	}
+
+	if out == nil || !out.Equal(msg) {
+		t.Fatal("didn't get the right message")
+	}
 }

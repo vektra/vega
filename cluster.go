@@ -25,6 +25,10 @@ func NewMemClusterNode(path string) (*clusterNode, error) {
 	return NewClusterNode(path, MemRouter())
 }
 
+func (cn *clusterNode) Registry() *Registry {
+	return cn.local
+}
+
 func (cn *clusterNode) AddRoute(name string, s Storage) {
 	cn.router.Add(name, s)
 }

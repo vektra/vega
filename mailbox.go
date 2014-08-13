@@ -4,7 +4,7 @@ type MemMailbox struct {
 	name     string
 	values   []*Message
 	inflight map[MessageId]*Message
-	watchers []chan *Message
+	watchers []*watchChannel
 }
 
 func NewMemMailbox(name string) Mailbox {
@@ -33,7 +33,7 @@ func (mm *MemMailbox) Nack(id MessageId) error {
 func (mm *MemMailbox) Abandon() error {
 	mm.values = nil
 	for _, w := range mm.watchers {
-		w <- nil
+		w.indicator <- nil
 	}
 
 	return nil
@@ -56,9 +56,20 @@ func (mm *MemMailbox) Poll() (*Message, error) {
 }
 
 func (mm *MemMailbox) Push(value *Message) error {
+RETRY:
+
 	if len(mm.watchers) > 0 {
 		watch := mm.watchers[0]
 		mm.watchers = mm.watchers[1:]
+
+		if watch.done != nil {
+			select {
+			case <-watch.done:
+				close(watch.indicator)
+				goto RETRY
+			default:
+			}
+		}
 
 		if value.MessageId == "" {
 			value.MessageId = NextMessageID()
@@ -66,7 +77,8 @@ func (mm *MemMailbox) Push(value *Message) error {
 
 		mm.inflight[value.MessageId] = value
 
-		watch <- value
+		watch.indicator <- value
+		close(watch.indicator)
 
 		return nil
 	}
@@ -76,10 +88,23 @@ func (mm *MemMailbox) Push(value *Message) error {
 	return nil
 }
 
+type watchChannel struct {
+	indicator chan *Message
+	done      chan struct{}
+}
+
 func (mm *MemMailbox) AddWatcher() <-chan *Message {
 	indicator := make(chan *Message, 1)
 
-	mm.watchers = append(mm.watchers, indicator)
+	mm.watchers = append(mm.watchers, &watchChannel{indicator, nil})
+
+	return indicator
+}
+
+func (mm *MemMailbox) AddWatcherCancelable(done chan struct{}) <-chan *Message {
+	indicator := make(chan *Message, 1)
+
+	mm.watchers = append(mm.watchers, &watchChannel{indicator, done})
 
 	return indicator
 }
