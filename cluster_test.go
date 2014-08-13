@@ -8,6 +8,33 @@ import (
 	"time"
 )
 
+func TestClusterBadPath(t *testing.T) {
+	_, err := NewMemClusterNode("/not/there/i/promise")
+	if err == nil {
+		t.Fatal("did not report an error about invalid path")
+	}
+}
+
+func TestClusterRegistry(t *testing.T) {
+	dir, err := ioutil.TempDir("", "mailbox")
+	if err != nil {
+		panic(err)
+	}
+
+	defer os.RemoveAll(dir)
+
+	cn, err := NewMemClusterNode(dir)
+	if err != nil {
+		panic(err)
+	}
+
+	defer cn.Close()
+
+	if cn.Registry() == nil {
+		t.Fatal("registry not configure")
+	}
+}
+
 func TestClusterLocalMessages(t *testing.T) {
 	dir, err := ioutil.TempDir("", "mailbox")
 	if err != nil {

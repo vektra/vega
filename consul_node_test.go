@@ -5,7 +5,27 @@ import (
 	"os"
 	"testing"
 	"time"
+
+	"github.com/stretchr/testify/assert"
 )
+
+func TestConsulNodeConfigDefaults(t *testing.T) {
+	cfg := &ConsulNodeConfig{}
+	err := cfg.Normalize()
+	if err != nil {
+		panic(err)
+	}
+
+	assert.Equal(t, cfg.ListenPort, DefaultPort)
+
+	ip, err := GetPrivateIP()
+	if err != nil {
+		panic(err)
+	}
+
+	assert.Equal(t, cfg.AdvertiseAddr, ip.String())
+	assert.Equal(t, cfg.DataPath, DefaultPath)
+}
 
 func TestConsulNode(t *testing.T) {
 	dir, err := ioutil.TempDir("", "mailbox")
