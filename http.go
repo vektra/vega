@@ -8,7 +8,10 @@ import (
 	"time"
 
 	"github.com/bmizerany/pat"
+	"github.com/ugorji/go/codec"
 )
+
+var ctMsgPack = "application/x-msgpack"
 
 type inflightDelivery struct {
 	delivery *Delivery
@@ -168,8 +171,14 @@ func (h *HTTPService) push(rw http.ResponseWriter, req *http.Request) {
 	name := req.URL.Query().Get(":name")
 
 	var msg Message
+	var err error
 
-	err := json.NewDecoder(req.Body).Decode(&msg)
+	if req.Header.Get("Content-Type") == ctMsgPack {
+		err = codec.NewDecoder(req.Body, &msgpack).Decode(&msg)
+	} else {
+		err = json.NewDecoder(req.Body).Decode(&msg)
+	}
+
 	if err != nil {
 		rw.WriteHeader(500)
 		rw.Write([]byte(err.Error()))
@@ -219,7 +228,12 @@ func (h *HTTPService) poll(rw http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	err = json.NewEncoder(rw).Encode(del.Message)
+	if req.Header.Get("Accept") == ctMsgPack {
+		err = codec.NewEncoder(rw, &msgpack).Encode(del.Message)
+	} else {
+		err = json.NewEncoder(rw).Encode(del.Message)
+	}
+
 	if err != nil {
 		del.Nack()
 		rw.WriteHeader(500)

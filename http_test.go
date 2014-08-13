@@ -8,6 +8,8 @@ import (
 	"net/http/httptest"
 	"testing"
 	"time"
+
+	"github.com/ugorji/go/codec"
 )
 
 func TestHTTPDeclareMailbox(t *testing.T) {
@@ -97,6 +99,44 @@ func TestHTTPPushMailbox(t *testing.T) {
 	}
 }
 
+func TestHTTPPushMailboxMsgPack(t *testing.T) {
+	reg := NewMemRegistry()
+	serv := NewHTTPService(cPort, reg)
+
+	reg.Declare("a")
+
+	msg := Msg("hello")
+
+	var body []byte
+	err := codec.NewEncoderBytes(&body, &msgpack).Encode(msg)
+	if err != nil {
+		panic(err)
+	}
+
+	url := fmt.Sprintf("http://%s/mailbox/a", cPort)
+
+	req, err := http.NewRequest("PUT", url, bytes.NewReader(body))
+	if err != nil {
+		panic(err)
+	}
+
+	req.Header.Set("Content-Type", ctMsgPack)
+
+	rw := httptest.NewRecorder()
+
+	serv.mux.ServeHTTP(rw, req)
+
+	if rw.Code != 200 {
+		t.Fatalf("server had an error: %d", rw.Code)
+	}
+
+	del, err := reg.Poll("a")
+
+	if del == nil || !del.Message.Equal(msg) {
+		t.Fatal("message not pushed")
+	}
+}
+
 func TestHTTPPollMailbox(t *testing.T) {
 	reg := NewMemRegistry()
 	serv := NewHTTPService(cPort, reg)
@@ -125,6 +165,45 @@ func TestHTTPPollMailbox(t *testing.T) {
 	var ret Message
 
 	err = json.NewDecoder(rw.Body).Decode(&ret)
+	if err != nil {
+		panic(err)
+	}
+
+	if !ret.Equal(msg) {
+		t.Fatal("poll did not return the message")
+	}
+}
+
+func TestHTTPPollMailboxMsgPack(t *testing.T) {
+	reg := NewMemRegistry()
+	serv := NewHTTPService(cPort, reg)
+
+	reg.Declare("a")
+
+	msg := Msg("hello")
+
+	reg.Push("a", msg)
+
+	url := fmt.Sprintf("http://%s/mailbox/a", cPort)
+
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		panic(err)
+	}
+
+	req.Header.Add("Accept", ctMsgPack)
+
+	rw := httptest.NewRecorder()
+
+	serv.mux.ServeHTTP(rw, req)
+
+	if rw.Code != 200 {
+		t.Fatalf("server had an error: %d", rw.Code)
+	}
+
+	var ret Message
+
+	err = codec.NewDecoder(rw.Body, &msgpack).Decode(&ret)
 	if err != nil {
 		panic(err)
 	}
