@@ -7,22 +7,22 @@ import (
 	"os"
 	"os/signal"
 
-	mailbox "./.."
+	vega "./.."
 )
 
-var fPort = flag.Int("port", mailbox.DefaultPort, "port to listen on")
-var fHttpPort = flag.Int("http-port", mailbox.DefaultHTTPPort, "port to listen on")
-var fData = flag.String("data-dir", mailbox.DefaultPath, "path to store data in")
+var fPort = flag.Int("port", vega.DefaultPort, "port to listen on")
+var fHttpPort = flag.Int("http-port", vega.DefaultHTTPPort, "port to listen on")
+var fData = flag.String("data-dir", vega.DefaultPath, "path to store data in")
 
 func main() {
 	flag.Parse()
 
-	cfg := &mailbox.ConsulNodeConfig{
+	cfg := &vega.ConsulNodeConfig{
 		ListenPort: *fPort,
 		DataPath:   *fData,
 	}
 
-	node, err := mailbox.NewConsulClusterNode(cfg)
+	node, err := vega.NewConsulClusterNode(cfg)
 	if err != nil {
 		log.Fatalf("unable to create node: %s", err)
 		os.Exit(1)
@@ -30,10 +30,10 @@ func main() {
 
 	go node.Accept()
 
-	var h *mailbox.HTTPService
+	var h *vega.HTTPService
 
 	if *fHttpPort != 0 {
-		h = mailbox.NewHTTPService(
+		h = vega.NewHTTPService(
 			fmt.Sprintf("127.0.0.1:%d", *fHttpPort),
 			node.Registry())
 

@@ -1,4 +1,4 @@
-package mailbox
+package vega
 
 type MessageType int
 

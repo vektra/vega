@@ -1,4 +1,4 @@
-package mailbox
+package vega
 
 type MemMailbox struct {
 	name     string
