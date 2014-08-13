@@ -221,8 +221,10 @@ func (h *HTTPService) poll(rw http.ResponseWriter, req *http.Request) {
 
 	err = json.NewEncoder(rw).Encode(del.Message)
 	if err != nil {
+		del.Nack()
 		rw.WriteHeader(500)
 		rw.Write([]byte(err.Error()))
+		return
 	}
 
 	h.lock.Lock()
