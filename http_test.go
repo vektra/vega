@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/assert"
 	"github.com/ugorji/go/codec"
 )
 
@@ -28,14 +29,10 @@ func TestHTTPDeclareMailbox(t *testing.T) {
 
 	serv.mux.ServeHTTP(rw, req)
 
-	if rw.Code != 200 {
-		t.Fatal("server had an error")
-	}
+	assert.Equal(t, 200, rw.Code, "server error")
 
 	err = reg.Push("a", Msg("hello"))
-	if err != nil {
-		t.Fatal("queue was not created")
-	}
+	assert.NoError(t, err, "queue was not created")
 }
 
 func TestHTTPAbandonMailbox(t *testing.T) {
@@ -55,14 +52,10 @@ func TestHTTPAbandonMailbox(t *testing.T) {
 
 	serv.mux.ServeHTTP(rw, req)
 
-	if rw.Code != 200 {
-		t.Fatal("server had an error")
-	}
+	assert.Equal(t, 200, rw.Code, "server error")
 
 	err = reg.Push("a", Msg("hello"))
-	if err == nil {
-		t.Fatal("mailbox was not abandon")
-	}
+	assert.Error(t, err, "mailbox was not abandon")
 }
 
 func TestHTTPPushMailbox(t *testing.T) {
@@ -89,15 +82,11 @@ func TestHTTPPushMailbox(t *testing.T) {
 
 	serv.mux.ServeHTTP(rw, req)
 
-	if rw.Code != 200 {
-		t.Fatalf("server had an error: %d", rw.Code)
-	}
+	assert.Equal(t, 200, rw.Code, "server error")
 
 	del, err := reg.Poll("a")
 
-	if del == nil || !del.Message.Equal(msg) {
-		t.Fatal("message not pushed")
-	}
+	assert.True(t, msg.Equal(del.Message), "message not pushed")
 }
 
 func TestHTTPPushMailboxMsgPack(t *testing.T) {
@@ -127,15 +116,14 @@ func TestHTTPPushMailboxMsgPack(t *testing.T) {
 
 	serv.mux.ServeHTTP(rw, req)
 
-	if rw.Code != 200 {
-		t.Fatalf("server had an error: %d", rw.Code)
-	}
+	assert.Equal(t, 200, rw.Code, "server error")
 
 	del, err := reg.Poll("a")
-
-	if del == nil || !del.Message.Equal(msg) {
-		t.Fatal("message not pushed")
+	if err != nil {
+		panic(err)
 	}
+
+	assert.True(t, msg.Equal(del.Message), "message not pushed")
 }
 
 func TestHTTPPollMailbox(t *testing.T) {
@@ -159,9 +147,7 @@ func TestHTTPPollMailbox(t *testing.T) {
 
 	serv.mux.ServeHTTP(rw, req)
 
-	if rw.Code != 200 {
-		t.Fatalf("server had an error: %d", rw.Code)
-	}
+	assert.Equal(t, 200, rw.Code, "server error")
 
 	var ret Message
 
@@ -170,9 +156,7 @@ func TestHTTPPollMailbox(t *testing.T) {
 		panic(err)
 	}
 
-	if !ret.Equal(msg) {
-		t.Fatal("poll did not return the message")
-	}
+	assert.True(t, msg.Equal(&ret), "poll did not return a message")
 }
 
 func TestHTTPPollMailboxMsgPack(t *testing.T) {
@@ -198,9 +182,7 @@ func TestHTTPPollMailboxMsgPack(t *testing.T) {
 
 	serv.mux.ServeHTTP(rw, req)
 
-	if rw.Code != 200 {
-		t.Fatalf("server had an error: %d", rw.Code)
-	}
+	assert.Equal(t, 200, rw.Code, "server error")
 
 	var ret Message
 
@@ -209,9 +191,7 @@ func TestHTTPPollMailboxMsgPack(t *testing.T) {
 		panic(err)
 	}
 
-	if !ret.Equal(msg) {
-		t.Fatal("poll did not return the message")
-	}
+	assert.True(t, msg.Equal(&ret), "poll did not return a message")
 }
 
 func TestHTTPPollEmptyMailbox(t *testing.T) {
@@ -231,9 +211,7 @@ func TestHTTPPollEmptyMailbox(t *testing.T) {
 
 	serv.mux.ServeHTTP(rw, req)
 
-	if rw.Code != 204 {
-		t.Fatalf("server didn't return 204: %d", rw.Code)
-	}
+	assert.Equal(t, 204, rw.Code)
 }
 
 func TestHTTPPollMailboxWithWait(t *testing.T) {
@@ -270,9 +248,7 @@ func TestHTTPPollMailboxWithWait(t *testing.T) {
 		t.Fatalf("didn't get the message in time")
 
 	case <-done:
-		if rw.Code != 200 {
-			t.Fatalf("server had an error: %d", rw.Code)
-		}
+		assert.Equal(t, 200, rw.Code)
 
 		var ret Message
 
@@ -281,9 +257,7 @@ func TestHTTPPollMailboxWithWait(t *testing.T) {
 			panic(err)
 		}
 
-		if !ret.Equal(msg) {
-			t.Fatal("poll did not return the message")
-		}
+		assert.True(t, msg.Equal(&ret), "poll did not return a message")
 	}
 }
 
@@ -308,9 +282,7 @@ func TestHTTPAckMessage(t *testing.T) {
 
 	serv.mux.ServeHTTP(rw, req)
 
-	if rw.Code != 200 {
-		t.Fatalf("server had an error: %d", rw.Code)
-	}
+	assert.Equal(t, 200, rw.Code)
 
 	var ret Message
 
@@ -332,13 +304,9 @@ func TestHTTPAckMessage(t *testing.T) {
 
 	serv.mux.ServeHTTP(rw, req)
 
-	if rw.Code != 200 {
-		t.Fatalf("server had an error: %d", rw.Code)
-	}
+	assert.Equal(t, 200, rw.Code)
 
-	if len(serv.inflight) != 0 {
-		t.Fatalf("message was not removed from inflight")
-	}
+	assert.Equal(t, 0, len(serv.inflight))
 }
 
 func TestHTTPNackMessage(t *testing.T) {
@@ -362,9 +330,7 @@ func TestHTTPNackMessage(t *testing.T) {
 
 	serv.mux.ServeHTTP(rw, req)
 
-	if rw.Code != 200 {
-		t.Fatalf("server had an error: %d", rw.Code)
-	}
+	assert.Equal(t, 200, rw.Code)
 
 	var ret Message
 
@@ -386,22 +352,16 @@ func TestHTTPNackMessage(t *testing.T) {
 
 	serv.mux.ServeHTTP(rw, req)
 
-	if rw.Code != 200 {
-		t.Fatalf("server had an error: %d", rw.Code)
-	}
+	assert.Equal(t, 200, rw.Code)
 
-	if len(serv.inflight) != 0 {
-		t.Fatalf("message was not removed from inflight")
-	}
+	assert.Equal(t, 0, len(serv.inflight))
 
 	del, err := reg.Poll("a")
 	if err != nil {
 		panic(err)
 	}
 
-	if del == nil {
-		t.Fatal("nack did not return the message")
-	}
+	assert.NotNil(t, del)
 }
 
 func TestHTTPCheckTimeoutsNacks(t *testing.T) {
@@ -425,9 +385,7 @@ func TestHTTPCheckTimeoutsNacks(t *testing.T) {
 
 	serv.mux.ServeHTTP(rw, req)
 
-	if rw.Code != 200 {
-		t.Fatalf("server had an error: %d", rw.Code)
-	}
+	assert.Equal(t, 200, rw.Code)
 
 	time.Sleep(1 * time.Second)
 
@@ -446,9 +404,7 @@ func TestHTTPCheckTimeoutsNacks(t *testing.T) {
 
 	serv.mux.ServeHTTP(rw, req)
 
-	if rw.Code != 200 {
-		t.Fatalf("server had an error: %d", rw.Code)
-	}
+	assert.Equal(t, 200, rw.Code)
 }
 
 func TestHTTPAutoNackAfterTimeout(t *testing.T) {
@@ -474,9 +430,7 @@ func TestHTTPAutoNackAfterTimeout(t *testing.T) {
 
 	serv.mux.ServeHTTP(rw, req)
 
-	if rw.Code != 200 {
-		t.Fatalf("server had an error: %d", rw.Code)
-	}
+	assert.Equal(t, 200, rw.Code)
 
 	time.Sleep(2 * time.Second)
 
@@ -493,16 +447,12 @@ func TestHTTPAutoNackAfterTimeout(t *testing.T) {
 
 	serv.mux.ServeHTTP(rw, req)
 
-	if rw.Code != 200 {
-		t.Fatalf("server had an error: %d", rw.Code)
-	}
+	assert.Equal(t, 200, rw.Code)
 
 	// Check that the 2nd poll got the default lease
 	serv.CheckTimeouts()
 
-	if len(serv.inflight) != 1 {
-		t.Fatal("server didn't nack the message properly")
-	}
+	assert.Equal(t, 1, len(serv.inflight))
 }
 
 func TestHTTPShutdownAutoNacks(t *testing.T) {
@@ -526,9 +476,7 @@ func TestHTTPShutdownAutoNacks(t *testing.T) {
 
 	serv.mux.ServeHTTP(rw, req)
 
-	if rw.Code != 200 {
-		t.Fatalf("server had an error: %d", rw.Code)
-	}
+	assert.Equal(t, 200, rw.Code)
 
 	serv.Close()
 
@@ -537,9 +485,7 @@ func TestHTTPShutdownAutoNacks(t *testing.T) {
 		panic(err)
 	}
 
-	if del == nil {
-		t.Fatal("shutdown did not nack inflight messages")
-	}
+	assert.NotNil(t, del)
 }
 
 func TestHTTPShutdownHandlesLongPoll(t *testing.T) {
@@ -582,14 +528,9 @@ func TestHTTPShutdownHandlesLongPoll(t *testing.T) {
 		panic(err)
 	}
 
-	if del == nil {
-		t.Fatal("shutdown did not nack inflight messages")
-	}
+	assert.NotNil(t, del)
 
 	wg.Wait()
 
-	if rw.Code != 204 {
-		t.Fatalf("server had an error: %d", rw.Code)
-	}
-
+	assert.Equal(t, 204, rw.Code)
 }

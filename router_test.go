@@ -1,6 +1,10 @@
 package vega
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/stretchr/testify/assert"
+)
 
 func TestRouterAdd(t *testing.T) {
 	r := NewMemRegistry()
@@ -9,14 +13,9 @@ func TestRouterAdd(t *testing.T) {
 	d.Add("a", r)
 
 	r2, ok := d.DiscoverEndpoint("a")
+	assert.True(t, ok)
 
-	if !ok {
-		t.Fatal("router didn't get told about a registry")
-	}
-
-	if r2 != r {
-		t.Fatal("didn't return the right registry")
-	}
+	assert.True(t, r2 == r)
 }
 
 func TestRouterPush(t *testing.T) {
@@ -35,7 +34,5 @@ func TestRouterPush(t *testing.T) {
 
 	res, _ := r.Poll("a")
 
-	if !res.Message.Equal(msg) {
-		t.Fatal("router didn't route")
-	}
+	assert.True(t, msg.Equal(res.Message))
 }

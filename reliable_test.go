@@ -3,6 +3,8 @@ package vega
 import (
 	"errors"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
 )
 
 type unreliableStorage struct {
@@ -36,25 +38,18 @@ func TestReliablePush(t *testing.T) {
 		panic(err)
 	}
 
-	if rs.BufferedMessages() != 1 {
-		t.Fatal("didn't buffer the message")
-	}
+	assert.Equal(t, 1, rs.BufferedMessages())
 
 	ur.fail = false
 
 	rs.Retry()
 
-	if rs.BufferedMessages() != 0 {
-		t.Fatal("didn't unbuffer the message")
-	}
+	assert.Equal(t, 0, rs.BufferedMessages())
 
-	if ur.name != "a" {
-		t.Fatal("didn't pass the correct name")
-	}
+	assert.NotNil(t, ur)
 
-	if ur.msg == nil || !ur.msg.Equal(msg) {
-		t.Fatal("didn't pass the correct message")
-	}
+	assert.Equal(t, "a", ur.name)
+	assert.True(t, msg.Equal(ur.msg))
 }
 
 func TestReliableRetryOnPush(t *testing.T) {
@@ -75,15 +70,8 @@ func TestReliableRetryOnPush(t *testing.T) {
 
 	rs.Push("b", msg2)
 
-	if rs.BufferedMessages() != 0 {
-		t.Fatal("didn't unbuffer the message")
-	}
+	assert.Equal(t, 0, rs.BufferedMessages())
 
-	if ur.name != "b" {
-		t.Fatal("didn't pass the correct name")
-	}
-
-	if ur.msg == nil || !ur.msg.Equal(msg2) {
-		t.Fatal("didn't pass the correct message")
-	}
+	assert.Equal(t, "b", ur.name)
+	assert.True(t, msg2.Equal(ur.msg))
 }

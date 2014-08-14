@@ -1,6 +1,10 @@
 package vega
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/stretchr/testify/assert"
+)
 
 func TestMailboxHeaders(t *testing.T) {
 	m := &Message{}
@@ -12,16 +16,12 @@ func TestMailboxHeaders(t *testing.T) {
 		t.Fatal("missing header")
 	}
 
-	if v.(int) != 34 {
-		t.Fatal("value not properly held")
-	}
+	assert.Equal(t, 34, v.(int))
 }
 
 func TestMailboxGetEmpty(t *testing.T) {
 	m := &Message{}
 
 	_, ok := m.GetHeader("age")
-	if ok {
-		t.Fatal("missing header")
-	}
+	assert.False(t, ok)
 }

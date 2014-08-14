@@ -5,6 +5,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/stretchr/testify/assert"
 )
 
 const cPort = "127.0.0.1:34000"
@@ -40,9 +42,7 @@ func TestServicePushAndPoll(t *testing.T) {
 	c1.Declare("a")
 
 	msg, err := c1.Poll("a")
-	if msg != nil {
-		t.Fatal("found a message")
-	}
+	assert.Nil(t, msg)
 
 	payload := Msg([]byte("hello"))
 
@@ -53,13 +53,7 @@ func TestServicePushAndPoll(t *testing.T) {
 		panic(err)
 	}
 
-	if msg == nil {
-		t.Fatal("didn't find a message")
-	}
-
-	if !msg.Message.Equal(payload) {
-		t.Fatal("body was corrupted")
-	}
+	assert.True(t, payload.Equal(msg.Message))
 }
 
 func TestServiceAck(t *testing.T) {
@@ -89,9 +83,7 @@ func TestServiceAck(t *testing.T) {
 		panic(err)
 	}
 
-	if del == nil {
-		t.Fatal("didn't find a message")
-	}
+	assert.NotNil(t, del)
 
 	err = del.Ack()
 	if err != nil {
@@ -110,9 +102,7 @@ func TestServiceAck(t *testing.T) {
 		panic(err)
 	}
 
-	if del2 != nil {
-		t.Fatal("ack did not work")
-	}
+	assert.Nil(t, del2)
 }
 
 func TestServiceNack(t *testing.T) {
@@ -142,9 +132,7 @@ func TestServiceNack(t *testing.T) {
 		panic(err)
 	}
 
-	if del == nil {
-		t.Fatal("didn't find a message")
-	}
+	assert.NotNil(t, del)
 
 	err = del.Nack()
 	if err != nil {
@@ -152,22 +140,16 @@ func TestServiceNack(t *testing.T) {
 	}
 
 	del2, err := c1.Poll("a")
-	if del2 == nil {
-		t.Fatal("nack did not return the message")
-	}
+	assert.NotNil(t, del2)
 
-	if !del.Message.Equal(del2.Message) {
-		t.Fatal("nack did not return the proper message")
-	}
+	assert.True(t, del.Message.Equal(del2.Message))
 
 	stats, err := c1.Stats()
 	if err != nil {
 		panic(err)
 	}
 
-	if stats.InFlight != 1 {
-		t.Fatal("inflight stats not incremented")
-	}
+	assert.Equal(t, 1, stats.InFlight)
 
 	err = del2.Nack()
 	if err != nil {
@@ -179,14 +161,10 @@ func TestServiceNack(t *testing.T) {
 		panic(err)
 	}
 
-	if stats.InFlight != 0 {
-		t.Fatalf("nack did not remove the message inflight: %d", stats.InFlight)
-	}
+	assert.Equal(t, 0, stats.InFlight)
 
 	err = del2.Nack()
-	if err == nil {
-		t.Fatal("did not return double nack error")
-	}
+	assert.Error(t, err)
 }
 
 func TestServiceClientDisconnectsAutoNack(t *testing.T) {
@@ -214,9 +192,7 @@ func TestServiceClientDisconnectsAutoNack(t *testing.T) {
 		panic(err)
 	}
 
-	if del == nil {
-		t.Fatal("didn't find a message")
-	}
+	assert.NotNil(t, del)
 
 	err = c1.Close()
 	if err != nil {
@@ -233,9 +209,7 @@ func TestServiceClientDisconnectsAutoNack(t *testing.T) {
 		panic(err)
 	}
 
-	if del2 == nil || !del2.Message.Equal(del.Message) {
-		t.Fatal("message was not returned again")
-	}
+	assert.True(t, del2.Message.Equal(del.Message))
 }
 
 func TestServiceClientNetworkDisconnectsAutoNack(t *testing.T) {
@@ -263,9 +237,7 @@ func TestServiceClientNetworkDisconnectsAutoNack(t *testing.T) {
 		panic(err)
 	}
 
-	if del == nil {
-		t.Fatal("didn't find a message")
-	}
+	assert.NotNil(t, del)
 
 	c1.conn.Close()
 
@@ -283,9 +255,7 @@ func TestServiceClientNetworkDisconnectsAutoNack(t *testing.T) {
 		panic(err)
 	}
 
-	if del2 == nil || !del2.Message.Equal(del.Message) {
-		t.Fatal("message was not returned again")
-	}
+	assert.True(t, del.Message.Equal(del2.Message))
 }
 
 func TestServiceShutdownAutoNack(t *testing.T) {
@@ -313,9 +283,7 @@ func TestServiceShutdownAutoNack(t *testing.T) {
 		panic(err)
 	}
 
-	if del == nil {
-		t.Fatal("didn't find a message")
-	}
+	assert.NotNil(t, del)
 
 	serv.Close()
 
@@ -339,9 +307,7 @@ func TestServiceShutdownAutoNack(t *testing.T) {
 		panic(err)
 	}
 
-	if del2 == nil || !del2.Message.Equal(del.Message) {
-		t.Fatal("message was not returned again")
-	}
+	assert.True(t, del.Message.Equal(del2.Message))
 }
 
 func TestServiceLongPoll(t *testing.T) {
@@ -386,9 +352,8 @@ func TestServiceLongPoll(t *testing.T) {
 
 	wg.Wait()
 
-	if got == nil || !got.Message.Equal(payload) {
-		t.Fatal("body was corrupted")
-	}
+	assert.NotNil(t, got)
+	assert.True(t, payload.Equal(got.Message))
 }
 
 func TestClientReconnects(t *testing.T) {
@@ -414,15 +379,11 @@ func TestClientReconnects(t *testing.T) {
 	payload := Msg([]byte("hello"))
 
 	err = c1.Push("a", payload)
-	if err != nil {
-		t.Fatal("client didn't reconnect")
-	}
+	assert.NoError(t, err)
 
 	got, err := c1.Poll("a")
 
-	if !got.Message.Equal(payload) {
-		t.Fatal("message was lost")
-	}
+	assert.True(t, payload.Equal(got.Message))
 }
 
 func TestServiceAbandon(t *testing.T) {
@@ -453,9 +414,7 @@ func TestServiceAbandon(t *testing.T) {
 	payload := Msg([]byte("hello"))
 
 	err = c2.Push("a", payload)
-	if err != nil {
-		panic(err)
-	}
+	assert.NoError(t, err)
 
 	err = c1.Abandon("a")
 	if err != nil {
@@ -463,9 +422,7 @@ func TestServiceAbandon(t *testing.T) {
 	}
 
 	err = c2.Push("a", payload)
-	if err == nil {
-		t.Fatal("queue was not deleted")
-	}
+	assert.Error(t, err)
 }
 
 func TestServiceEphemeralDeclare(t *testing.T) {
@@ -503,7 +460,5 @@ func TestServiceEphemeralDeclare(t *testing.T) {
 	c1.Close()
 
 	err = c2.Push("e-a", payload)
-	if err == nil {
-		t.Fatal("queue was not deleted")
-	}
+	assert.Error(t, err)
 }

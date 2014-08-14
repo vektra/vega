@@ -4,6 +4,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/stretchr/testify/assert"
 )
 
 func TestRegistryPoll(t *testing.T) {
@@ -11,9 +13,7 @@ func TestRegistryPoll(t *testing.T) {
 
 	v, _ := r.Poll("a")
 
-	if v != nil {
-		t.Fatal("An empty mailbox has values")
-	}
+	assert.Nil(t, v)
 
 	msg := Msg([]byte("hello"))
 
@@ -22,13 +22,8 @@ func TestRegistryPoll(t *testing.T) {
 
 	ret, _ := r.Poll("a")
 
-	if ret == nil {
-		t.Fatal("The mailbox did not get the value")
-	}
-
-	if !msg.Equal(ret.Message) {
-		t.Fatal("Wrong value")
-	}
+	assert.NotNil(t, ret)
+	assert.True(t, msg.Equal(ret.Message))
 }
 
 func TestLongPollRegistry(t *testing.T) {
@@ -56,10 +51,8 @@ func TestLongPollRegistry(t *testing.T) {
 
 	wg.Wait()
 
-	if !msg.Equal(got.Message) {
-		t.Fatal("Wrong value")
-	}
-
+	assert.NotNil(t, got)
+	assert.True(t, msg.Equal(got.Message))
 }
 
 func TestLongPollRegistryTimeout(t *testing.T) {
@@ -112,9 +105,7 @@ func TestLongPollRegistryIsCancelable(t *testing.T) {
 
 	select {
 	case got := <-fin:
-		if got != nil {
-			t.Fatal("cancelled long poll returned... something")
-		}
+		assert.Nil(t, got)
 	case <-time.Tick(1 * time.Second):
 		t.Fatal("long poll did not cancel")
 	}
@@ -126,8 +117,6 @@ func TestLongPollRegistryIsCancelable(t *testing.T) {
 		panic(err)
 	}
 
-	if try == nil || !msg.Equal(try.Message) {
-		t.Fatal("Wrong value")
-	}
-
+	assert.NotNil(t, try)
+	assert.True(t, msg.Equal(try.Message))
 }

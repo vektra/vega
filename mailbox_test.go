@@ -1,6 +1,10 @@
 package vega
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/stretchr/testify/assert"
+)
 
 func TestMailboxPush(t *testing.T) {
 	m := NewMemMailbox("")
@@ -10,9 +14,8 @@ func TestMailboxPush(t *testing.T) {
 	m.Push(msg)
 
 	out, _ := m.Poll()
-	if !out.Equal(msg) {
-		t.Fatal("Wrong value")
-	}
+
+	assert.True(t, msg.Equal(out))
 }
 
 func TestMailboxAck(t *testing.T) {
@@ -23,19 +26,13 @@ func TestMailboxAck(t *testing.T) {
 	m.Push(msg)
 
 	out, _ := m.Poll()
-	if !out.Equal(msg) {
-		t.Fatal("Wrong value")
-	}
+
+	assert.True(t, msg.Equal(out))
 
 	stats := m.Stats()
 
-	if stats.Size != 0 {
-		t.Fatal("poll did not consume the message")
-	}
-
-	if stats.InFlight != 1 {
-		t.Fatal("poll did not put the message inflight")
-	}
+	assert.Equal(t, 0, stats.Size)
+	assert.Equal(t, 1, stats.InFlight)
 
 	err := m.Ack(out.MessageId)
 	if err != nil {
@@ -44,9 +41,7 @@ func TestMailboxAck(t *testing.T) {
 
 	stats = m.Stats()
 
-	if stats.InFlight != 0 {
-		t.Fatal("ack did not remove the inflight message")
-	}
+	assert.Equal(t, 0, stats.InFlight)
 }
 
 func TestMailboxNack(t *testing.T) {
@@ -57,14 +52,10 @@ func TestMailboxNack(t *testing.T) {
 	m.Push(msg)
 
 	out, _ := m.Poll()
-	if !out.Equal(msg) {
-		t.Fatal("Wrong value")
-	}
+	assert.True(t, msg.Equal(out))
 
 	out2, _ := m.Poll()
-	if out2 != nil {
-		t.Fatal("where did this message come from?")
-	}
+	assert.Nil(t, out2)
 
 	err := m.Nack(out.MessageId)
 	if err != nil {
@@ -72,9 +63,7 @@ func TestMailboxNack(t *testing.T) {
 	}
 
 	out3, _ := m.Poll()
-	if !out.Equal(out3) {
-		t.Fatal("Nack'd message not come back")
-	}
+	assert.True(t, out.Equal(out3))
 }
 
 func TestMailboxNackPutsAMessageAtTheFront(t *testing.T) {
@@ -87,9 +76,7 @@ func TestMailboxNackPutsAMessageAtTheFront(t *testing.T) {
 	m.Push(msg2)
 
 	out, _ := m.Poll()
-	if !out.Equal(msg) {
-		t.Fatal("Wrong value")
-	}
+	assert.True(t, msg.Equal(out))
 
 	err := m.Nack(out.MessageId)
 	if err != nil {
@@ -97,9 +84,7 @@ func TestMailboxNackPutsAMessageAtTheFront(t *testing.T) {
 	}
 
 	out3, _ := m.Poll()
-	if !out.Equal(out3) {
-		t.Fatal("Nack'd message not come back")
-	}
+	assert.True(t, out.Equal(out3))
 }
 
 func TestMailboxWatcher(t *testing.T) {
@@ -113,9 +98,7 @@ func TestMailboxWatcher(t *testing.T) {
 
 	select {
 	case ret := <-watch:
-		if !ret.Equal(msg) {
-			t.Fatal("wrong message")
-		}
+		assert.True(t, msg.Equal(ret))
 	default:
 		t.Fatal("watch didn't get value")
 	}
@@ -130,9 +113,7 @@ func TestMailboxInformsWatchersOnAbandon(t *testing.T) {
 
 	select {
 	case ret := <-watch:
-		if ret != nil {
-			t.Fatal("wrong message")
-		}
+		assert.Nil(t, ret)
 	default:
 		t.Fatal("watch didn't get value")
 	}
@@ -149,25 +130,19 @@ func TestMailboxWatcherGoesInflight(t *testing.T) {
 
 	stats := m.Stats()
 
-	if stats.InFlight != 1 {
-		t.Fatal("push did not set the message inflight")
-	}
+	assert.Equal(t, 1, stats.InFlight)
 
 	select {
 	case ret := <-watch:
 		err := m.Ack(ret.MessageId)
-		if err != nil {
-			t.Fatal("wrong message")
-		}
+		assert.NoError(t, err)
 	default:
 		t.Fatal("watch didn't get value")
 	}
 
 	stats = m.Stats()
 
-	if stats.InFlight != 0 {
-		t.Fatal("ack did not work on a watched message")
-	}
+	assert.Equal(t, 0, stats.InFlight)
 }
 
 func TestMailboxWatcherIsCancelable(t *testing.T) {
@@ -185,9 +160,7 @@ func TestMailboxWatcherIsCancelable(t *testing.T) {
 
 	select {
 	case ret := <-watch:
-		if ret != nil {
-			t.Fatal("done didn't close indicator")
-		}
+		assert.Nil(t, ret)
 	default:
 		t.Fatal("watch didn't get value")
 	}
@@ -197,7 +170,5 @@ func TestMailboxWatcherIsCancelable(t *testing.T) {
 		panic(err)
 	}
 
-	if out == nil || !out.Equal(msg) {
-		t.Fatal("didn't get the right message")
-	}
+	assert.True(t, msg.Equal(out))
 }

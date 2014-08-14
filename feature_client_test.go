@@ -5,6 +5,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/stretchr/testify/assert"
 )
 
 func TestFeatureClientAutoEphemeralDeclare(t *testing.T) {
@@ -28,9 +30,7 @@ func TestFeatureClientAutoEphemeralDeclare(t *testing.T) {
 	msg := Msg([]byte("hello"))
 
 	err = fc.Push(name, msg)
-	if err != nil {
-		t.Fatal("queue was not declared properly")
-	}
+	assert.NoError(t, err, "queue was not declared")
 
 	fc.Close()
 
@@ -40,9 +40,7 @@ func TestFeatureClientAutoEphemeralDeclare(t *testing.T) {
 	}
 
 	err = fc.Push(name, msg)
-	if err == nil {
-		t.Fatal("queue was not ephemeral")
-	}
+	assert.NotNil(t, err, "queue was not ephemeral")
 }
 
 func TestFeatureClientReceiveChannel(t *testing.T) {
@@ -70,9 +68,7 @@ func TestFeatureClientReceiveChannel(t *testing.T) {
 
 	select {
 	case got := <-rc.Channel:
-		if !got.Message.Equal(msg) {
-			t.Fatal("got the wrong message")
-		}
+		assert.True(t, msg.Equal(got.Message), "wrong message")
 	case <-time.Tick(1 * time.Second):
 		t.Fatal("channel didn't provide a value")
 	}
@@ -133,9 +129,7 @@ func TestFeatureClientReceiveChannelProvidesManyValues(t *testing.T) {
 
 	wg.Wait()
 
-	if len(messages) != 3 {
-		t.Fatalf("channel didn't get all the messages: got %d", len(messages))
-	}
+	assert.Equal(t, len(messages), 3, "channel didn't get 3 messages")
 }
 
 func TestFeatureClientRequestReply(t *testing.T) {
@@ -172,7 +166,5 @@ func TestFeatureClientRequestReply(t *testing.T) {
 		panic(err)
 	}
 
-	if !bytes.Equal(resp.Message.Body, []byte("hey!")) {
-		t.Fatal("didn't get the response")
-	}
+	assert.True(t, bytes.Equal(resp.Message.Body, []byte("hey!")), "wrong message")
 }
