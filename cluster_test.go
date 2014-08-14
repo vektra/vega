@@ -6,13 +6,13 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/stretchr/testify/assert"
 )
 
 func TestClusterBadPath(t *testing.T) {
 	_, err := NewMemClusterNode("/not/there/i/promise")
-	if err == nil {
-		t.Fatal("did not report an error about invalid path")
-	}
+	assert.Error(t, err, "did not report an error about invalid path")
 }
 
 func TestClusterRegistry(t *testing.T) {
@@ -30,9 +30,7 @@ func TestClusterRegistry(t *testing.T) {
 
 	defer cn.Close()
 
-	if cn.Registry() == nil {
-		t.Fatal("registry not configure")
-	}
+	assert.NotNil(t, cn.Registry())
 }
 
 func TestClusterLocalMessages(t *testing.T) {
@@ -64,9 +62,7 @@ func TestClusterLocalMessages(t *testing.T) {
 
 	msg, err := cn.disk.Mailbox("a").Poll()
 
-	if msg == nil || !msg.Equal(payload) {
-		t.Fatal("message was not stored locally")
-	}
+	assert.Equal(t, payload, msg, "message was not stored locally")
 }
 
 func TestClusterRoutes(t *testing.T) {
@@ -95,9 +91,7 @@ func TestClusterRoutes(t *testing.T) {
 
 	msg, err := memReg.Poll("a")
 
-	if msg == nil || !msg.Message.Equal(payload) {
-		t.Fatal("message was not stored locally")
-	}
+	assert.Equal(t, payload, msg.Message, "message was not stored locally")
 }
 
 func TestClusterLongPoll(t *testing.T) {
@@ -132,9 +126,7 @@ func TestClusterLongPoll(t *testing.T) {
 
 	wg.Wait()
 
-	if got == nil || !msg.Equal(got.Message) {
-		t.Fatal("long poll didn't see the value")
-	}
+	assert.Equal(t, msg, got.Message, "long poll didn't see the value")
 }
 
 func TestClusterRoutesViaNetwork(t *testing.T) {
@@ -215,9 +207,7 @@ func TestClusterRoutesViaNetwork(t *testing.T) {
 		panic(err)
 	}
 
-	if ret == nil || !ret.Message.Equal(msg) {
-		t.Fatal("message did not route properly")
-	}
+	assert.True(t, msg.Equal(ret.Message), "message did not route properly")
 }
 
 func TestClusterAbandon(t *testing.T) {
@@ -253,7 +243,5 @@ func TestClusterAbandon(t *testing.T) {
 	}
 
 	err = cn.Push("a", payload)
-	if err == nil {
-		t.Fatal("queue was not abondoned")
-	}
+	assert.Error(t, err, "queue was not abandoned")
 }

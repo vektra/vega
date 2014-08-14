@@ -87,9 +87,7 @@ func TestConsulNode(t *testing.T) {
 		panic(err)
 	}
 
-	if got == nil || !got.Message.Equal(msg) {
-		t.Fatal("didn't get the message")
-	}
+	assert.True(t, got.Message.Equal(msg), "didn't get the message")
 }
 
 func TestConsulNodeRedeclaresOnStart(t *testing.T) {
@@ -148,7 +146,5 @@ func TestConsulNodeRedeclaresOnStart(t *testing.T) {
 	cl, _ = NewClient(":8899")
 
 	err = cl.Push("a", msg)
-	if err != nil {
-		t.Fatal("routes were not readded")
-	}
+	assert.NoError(t, err, "routes were not readded")
 }

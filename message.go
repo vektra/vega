@@ -67,6 +67,10 @@ func Msg(body interface{}) *Message {
 }
 
 func (m *Message) Equal(m2 *Message) bool {
+	if m2 == nil {
+		return false
+	}
+
 	return bytes.Equal(m.Body, m2.Body)
 }
 

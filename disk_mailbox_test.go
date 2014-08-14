@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/jmhodges/levigo"
+	"github.com/stretchr/testify/assert"
 )
 
 func TestDiskMailboxPush(t *testing.T) {
@@ -30,9 +31,7 @@ func TestDiskMailboxPush(t *testing.T) {
 	m.Push(msg)
 
 	out, _ := m.Poll()
-	if !out.Equal(msg) {
-		t.Fatal("Wrong value")
-	}
+	assert.True(t, out.Equal(msg), "wrong value")
 }
 
 func TestDiskMailboxAck(t *testing.T) {
@@ -57,19 +56,12 @@ func TestDiskMailboxAck(t *testing.T) {
 	m.Push(msg)
 
 	out, _ := m.Poll()
-	if !out.Equal(msg) {
-		t.Fatal("Wrong value")
-	}
+	assert.True(t, out.Equal(msg), "wrong value")
 
 	stats := m.Stats()
 
-	if stats.Size != 0 {
-		t.Fatal("poll did not consume the message")
-	}
-
-	if stats.InFlight != 1 {
-		t.Fatal("poll did not put the message inflight")
-	}
+	assert.Equal(t, stats.Size, 0, "poll did not consume the message")
+	assert.Equal(t, stats.InFlight, 1, "poll did not put the message inflight")
 
 	err = m.Ack(out.MessageId)
 	if err != nil {
@@ -78,9 +70,7 @@ func TestDiskMailboxAck(t *testing.T) {
 
 	stats = m.Stats()
 
-	if stats.InFlight != 0 {
-		t.Fatal("ack did not remove the inflight message")
-	}
+	assert.Equal(t, stats.InFlight, 0, "ack did not remove the inflight message")
 }
 
 func TestDiskMailboxNack(t *testing.T) {
@@ -105,14 +95,10 @@ func TestDiskMailboxNack(t *testing.T) {
 	m.Push(msg)
 
 	out, _ := m.Poll()
-	if !out.Equal(msg) {
-		t.Fatal("Wrong value")
-	}
+	assert.True(t, out.Equal(msg), "wrong value")
 
 	out2, _ := m.Poll()
-	if out2 != nil {
-		t.Fatal("where did this message come from?")
-	}
+	assert.Nil(t, out2, "where did this message come from?")
 
 	err = m.Nack(out.MessageId)
 	if err != nil {
@@ -120,9 +106,7 @@ func TestDiskMailboxNack(t *testing.T) {
 	}
 
 	out3, _ := m.Poll()
-	if out3 == nil || !out.Equal(out3) {
-		t.Fatal("Nack'd message not come back")
-	}
+	assert.True(t, out.Equal(out3), "nack'd message did not come back")
 }
 
 func TestDiskMailboxNackPutsAMessageAtTheFront(t *testing.T) {
@@ -149,9 +133,7 @@ func TestDiskMailboxNackPutsAMessageAtTheFront(t *testing.T) {
 	m.Push(msg2)
 
 	out, _ := m.Poll()
-	if !out.Equal(msg) {
-		t.Fatal("Wrong value")
-	}
+	assert.True(t, msg.Equal(out), "wrong value")
 
 	err = m.Nack(out.MessageId)
 	if err != nil {
@@ -159,9 +141,7 @@ func TestDiskMailboxNackPutsAMessageAtTheFront(t *testing.T) {
 	}
 
 	out3, _ := m.Poll()
-	if !out.Equal(out3) {
-		t.Fatal("Nack'd message not come back")
-	}
+	assert.True(t, out.Equal(out3), "nack'd message did not come back")
 }
 
 func TestDiskMailboxDiscontiniousNack(t *testing.T) {
@@ -188,14 +168,10 @@ func TestDiskMailboxDiscontiniousNack(t *testing.T) {
 	m.Push(msg2)
 
 	out1, _ := m.Poll()
-	if !out1.Equal(msg) {
-		t.Fatal("Wrong value")
-	}
+	assert.True(t, msg.Equal(out1), "wrong value")
 
 	out2, _ := m.Poll()
-	if !out2.Equal(msg2) {
-		t.Fatal("wrong message")
-	}
+	assert.True(t, msg2.Equal(out2), "wrong value")
 
 	err = m.Nack(out1.MessageId)
 	if err != nil {
@@ -203,39 +179,27 @@ func TestDiskMailboxDiscontiniousNack(t *testing.T) {
 	}
 
 	stats := m.Stats()
-	if stats.Size != 1 {
-		t.Fatalf("nack didn't change size")
-	}
+	assert.Equal(t, 1, stats.Size, "nack didn't change size")
 
 	out3, _ := m.Poll()
-	if !out1.Equal(out3) {
-		t.Fatal("Nack'd message not come back")
-	}
+	assert.True(t, out1.Equal(out3), "nack'd message did not come back")
 
 	stats = m.Stats()
-	if stats.InFlight != 2 {
-		t.Fatalf("failed to track discontinious message as inflight %d", stats.InFlight)
-	}
+	assert.Equal(t, 2, stats.InFlight, "failed to track discontinious message")
 
 	err = m.Ack(out3.MessageId)
 	if err != nil {
 		panic(err)
 	}
 
-	stats = m.Stats()
-	if stats.InFlight != 1 {
-		t.Fatalf("ack'd discontinious message failed: %d", stats.InFlight)
-	}
+	assert.Equal(t, 1, m.Stats().InFlight, "ack'd discontinous message failed")
 
 	err = m.Ack(out2.MessageId)
 	if err != nil {
 		panic(err)
 	}
 
-	stats = m.Stats()
-	if stats.InFlight != 0 {
-		t.Fatalf("ack'd discontinious message failed: %d", stats.InFlight)
-	}
+	assert.Equal(t, 0, m.Stats().InFlight, "ack'd discontinous message failed")
 }
 
 func TestDiskMailboxWatcherGoesInflight(t *testing.T) {
@@ -261,18 +225,12 @@ func TestDiskMailboxWatcherGoesInflight(t *testing.T) {
 
 	m.Push(msg)
 
-	stats := m.Stats()
-
-	if stats.InFlight != 1 {
-		t.Fatal("push did not set the message inflight")
-	}
+	assert.Equal(t, 1, m.Stats().InFlight, "push did not set the message inflight")
 
 	select {
 	case ret := <-watch:
 		err := m.Ack(ret.MessageId)
-		if err != nil {
-			t.Fatal("wrong message")
-		}
+		assert.NoError(t, err, "wrong message")
 	default:
 		t.Fatal("watch didn't get value")
 	}
@@ -299,9 +257,7 @@ func TestDiskMailboxKeepsStatus(t *testing.T) {
 		panic(err)
 	}
 
-	if v != nil {
-		t.Fatal("there shouldn't be anything in queue")
-	}
+	assert.Nil(t, v, "there shouldn't be anything in queue")
 
 	msg := Msg([]byte("hello"))
 
@@ -325,19 +281,13 @@ func TestDiskMailboxKeepsStatus(t *testing.T) {
 	m.Push(msg3)
 
 	ret, _ := m.Poll()
-	if !ret.Equal(msg2) {
-		t.Fatal("Unable to pull correct message")
-	}
+	assert.True(t, msg2.Equal(ret), "unable to pull correct message")
 
 	ret, _ = m.Poll()
-	if !ret.Equal(msg3) {
-		t.Fatal("Unable to pull correct message")
-	}
+	assert.True(t, msg3.Equal(ret), "unable to pull correct message")
 
 	ret, _ = m.Poll()
-	if ret != nil {
-		t.Fatal("there shouldn't be anything in the queue")
-	}
+	assert.Nil(t, ret, "queue should be empty")
 }
 
 func TestDiskMailboxStats(t *testing.T) {
@@ -365,22 +315,16 @@ func TestDiskMailboxStats(t *testing.T) {
 
 	m.Push(msg)
 
-	if m.Stats().Size != 1 {
-		t.Fatal("stats not updated to 1")
-	}
+	assert.Equal(t, 1, m.Stats().Size, "stats not updated to 1")
 
 	m.Push(msg)
 
-	if m.Stats().Size != 2 {
-		t.Fatal("stats not updated to 2")
-	}
+	assert.Equal(t, 2, m.Stats().Size, "stats not updated to 2")
 
 	m.Poll()
 	m.Poll()
 
-	if m.Stats().Size != 0 {
-		t.Fatal("stats not updated to 0")
-	}
+	assert.Equal(t, 0, m.Stats().Size, "stats not updated to 0")
 }
 
 func TestDiskMailboxWatcher(t *testing.T) {
@@ -408,9 +352,7 @@ func TestDiskMailboxWatcher(t *testing.T) {
 
 	select {
 	case ret := <-watch:
-		if !ret.Equal(msg) {
-			t.Fatal("wrong message")
-		}
+		assert.True(t, msg.Equal(ret), "wrong message")
 	default:
 		t.Fatal("watch didn't get value")
 	}
@@ -447,10 +389,7 @@ func TestDiskMailboxPersists(t *testing.T) {
 	m2 := r2.Mailbox("a")
 
 	ret, _ := m2.Poll()
-
-	if !ret.Equal(msg) {
-		t.Fatal("couldn't pull the message out")
-	}
+	assert.True(t, msg.Equal(ret), "couldn't pull the message out")
 }
 
 func TestDiskMailboxAbandon(t *testing.T) {
@@ -480,9 +419,7 @@ func TestDiskMailboxAbandon(t *testing.T) {
 		panic(err)
 	}
 
-	if len(data) == 0 {
-		t.Fatal("mailbox was not setup")
-	}
+	assert.NotEqual(t, 0, len(data), "mailbox not setup")
 
 	m.Abandon()
 
@@ -491,10 +428,9 @@ func TestDiskMailboxAbandon(t *testing.T) {
 		panic(err)
 	}
 
-	if len(data) != 0 {
-		t.Fatal("mailbox was not deleted")
-	}
+	assert.Equal(t, 0, len(data), "mailbox not deleted")
 }
+
 func TestDiskMailboxInformsWatchersOnAbandon(t *testing.T) {
 	dir, err := ioutil.TempDir("", "mailbox")
 	if err != nil {
@@ -516,9 +452,7 @@ func TestDiskMailboxInformsWatchersOnAbandon(t *testing.T) {
 
 	select {
 	case ret := <-watch:
-		if ret != nil {
-			t.Fatal("wrong message")
-		}
+		assert.Nil(t, ret, "wrong message")
 	default:
 		t.Fatal("watch didn't get value")
 	}
@@ -551,9 +485,7 @@ func TestDiskMailboxWatcherIsCancelable(t *testing.T) {
 
 	select {
 	case ret := <-watch:
-		if ret != nil {
-			t.Fatal("done didn't close indicator")
-		}
+		assert.Nil(t, ret, "done didn't close indicator")
 	default:
 		t.Fatal("watch didn't get value")
 	}
@@ -563,7 +495,5 @@ func TestDiskMailboxWatcherIsCancelable(t *testing.T) {
 		panic(err)
 	}
 
-	if out == nil || !out.Equal(msg) {
-		t.Fatal("didn't get the right message")
-	}
+	assert.True(t, msg.Equal(out), "didn't get right message")
 }
