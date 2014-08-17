@@ -603,6 +603,170 @@ func TestFeatureClientPipeCloseAbandonsMailbox(t *testing.T) {
 
 	conn.Close()
 
-	err = fc.Push(conn.(*pipeConn).ownM, Msg("test"))
+	err = fc.Push(conn.(*PipeConn).ownM, Msg("test"))
 	assert.Error(t, err)
+}
+
+func TestFeatureClientPipeSendBulk(t *testing.T) {
+	serv, err := NewMemService(cPort)
+	if err != nil {
+		panic(err)
+	}
+
+	defer serv.Close()
+	go serv.Accept()
+
+	fc, err := Dial(cPort)
+	if err != nil {
+		panic(err)
+	}
+
+	defer fc.Close()
+
+	fc2, err := Dial(cPort)
+	if err != nil {
+		panic(err)
+	}
+
+	defer fc2.Close()
+
+	var wg sync.WaitGroup
+
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		conn, _ := fc.ListenPipe("a")
+		conn.SendBulk([]byte("1"))
+		conn.Close()
+	}()
+
+	runtime.Gosched()
+
+	conn, err := fc.ConnectPipe("a")
+	defer conn.Close()
+
+	assert.NoError(t, err)
+
+	data := make([]byte, 1)
+
+	n, err := conn.Read(data)
+	assert.Equal(t, 1, n)
+	assert.Equal(t, []byte("1"), data)
+
+	wg.Wait()
+}
+
+func TestFeatureClientPipeSendBulkBuffered(t *testing.T) {
+	serv, err := NewMemService(cPort)
+	if err != nil {
+		panic(err)
+	}
+
+	defer serv.Close()
+	go serv.Accept()
+
+	fc, err := Dial(cPort)
+	if err != nil {
+		panic(err)
+	}
+
+	defer fc.Close()
+
+	fc2, err := Dial(cPort)
+	if err != nil {
+		panic(err)
+	}
+
+	defer fc2.Close()
+
+	var wg sync.WaitGroup
+
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		conn, _ := fc.ListenPipe("a")
+		conn.SendBulk([]byte("hello"))
+		conn.Close()
+	}()
+
+	runtime.Gosched()
+
+	conn, err := fc.ConnectPipe("a")
+	defer conn.Close()
+
+	assert.NoError(t, err)
+
+	data := make([]byte, 1)
+
+	n, err := conn.Read(data)
+	assert.Equal(t, 1, n)
+	assert.Equal(t, []byte("h"), data)
+
+	d2 := make([]byte, 5)
+
+	n, err = conn.Read(d2)
+	assert.Equal(t, 4, n)
+	assert.Equal(t, []byte("ello"), d2[:n])
+
+	wg.Wait()
+}
+
+func TestFeatureClientPipeSendBulkSwitchesBack(t *testing.T) {
+	serv, err := NewMemService(cPort)
+	if err != nil {
+		panic(err)
+	}
+
+	defer serv.Close()
+	go serv.Accept()
+
+	fc, err := Dial(cPort)
+	if err != nil {
+		panic(err)
+	}
+
+	defer fc.Close()
+
+	fc2, err := Dial(cPort)
+	if err != nil {
+		panic(err)
+	}
+
+	defer fc2.Close()
+
+	var wg sync.WaitGroup
+
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		conn, _ := fc.ListenPipe("a")
+		conn.SendBulk([]byte("hello"))
+		conn.Write([]byte("world"))
+		conn.Close()
+	}()
+
+	runtime.Gosched()
+
+	conn, err := fc.ConnectPipe("a")
+	defer conn.Close()
+
+	assert.NoError(t, err)
+
+	data := make([]byte, 1)
+
+	n, err := conn.Read(data)
+	assert.Equal(t, 1, n)
+	assert.Equal(t, []byte("h"), data)
+
+	d2 := make([]byte, 5)
+
+	n, err = conn.Read(d2)
+	assert.Equal(t, 4, n)
+	assert.Equal(t, []byte("ello"), d2[:n])
+
+	n, err = conn.Read(d2)
+	assert.Equal(t, 5, n)
+	assert.Equal(t, []byte("world"), d2)
+
+	wg.Wait()
 }

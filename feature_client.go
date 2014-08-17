@@ -193,17 +193,18 @@ func (p *pipeAddr) String() string {
 	return "vega:" + p.q
 }
 
-type pipeConn struct {
+type PipeConn struct {
 	fc     *FeatureClient
 	pairM  string
 	ownM   string
 	closed bool
 	buffer []byte
+	bulk   net.Conn
 
 	readDeadline time.Time
 }
 
-func (p *pipeConn) Close() error {
+func (p *PipeConn) Close() error {
 	if p.closed {
 		return nil
 	}
@@ -215,19 +216,29 @@ func (p *pipeConn) Close() error {
 	return nil
 }
 
-func (p *pipeConn) LocalAddr() net.Addr {
+func (p *PipeConn) LocalAddr() net.Addr {
 	return &pipeAddr{p.ownM}
 }
 
-func (p *pipeConn) RemoteAddr() net.Addr {
+func (p *PipeConn) RemoteAddr() net.Addr {
 	return &pipeAddr{p.pairM}
 }
 
 var ETimeout = errors.New("operation timeout")
 
-func (p *pipeConn) Read(b []byte) (int, error) {
+func (p *PipeConn) Read(b []byte) (int, error) {
 	if p.closed {
 		return 0, io.EOF
+	}
+
+	if p.bulk != nil {
+		n, err := p.bulk.Read(b)
+		if err == io.EOF {
+			p.bulk.Close()
+			p.bulk = nil
+		} else {
+			return n, err
+		}
 	}
 
 	total := 0
@@ -296,7 +307,8 @@ func (p *pipeConn) Read(b []byte) (int, error) {
 			return 0, err
 		}
 
-		if resp.Message.Type == "pipe/close" {
+		switch resp.Message.Type {
+		case "pipe/close":
 			p.Close()
 
 			if total > 0 {
@@ -304,6 +316,8 @@ func (p *pipeConn) Read(b []byte) (int, error) {
 			}
 
 			return 0, io.EOF
+		case "pipe/bulkstart":
+			return p.readBulk(resp.Message, b)
 		}
 
 		bn := len(b)
@@ -330,7 +344,7 @@ func (p *pipeConn) Read(b []byte) (int, error) {
 	}
 }
 
-func (p *pipeConn) Write(b []byte) (int, error) {
+func (p *PipeConn) Write(b []byte) (int, error) {
 	if p.closed {
 		return 0, io.EOF
 	}
@@ -347,21 +361,73 @@ func (p *pipeConn) Write(b []byte) (int, error) {
 	return len(b), nil
 }
 
-func (p *pipeConn) SetDeadline(t time.Time) error {
+func (p *PipeConn) SetDeadline(t time.Time) error {
 	p.readDeadline = t
 	return nil
 }
 
-func (p *pipeConn) SetReadDeadline(t time.Time) error {
+func (p *PipeConn) SetReadDeadline(t time.Time) error {
 	p.readDeadline = t
 	return nil
 }
 
-func (p *pipeConn) SetWriteDeadline(t time.Time) error {
+func (p *PipeConn) SetWriteDeadline(t time.Time) error {
 	return nil
 }
 
-func (fc *FeatureClient) ListenPipe(name string) (net.Conn, error) {
+func (p *PipeConn) readBulk(msg *Message, data []byte) (int, error) {
+	socketId := msg.CorrelationId
+
+	s, err := net.Dial("tcp", socketId)
+	if err != nil {
+		return 0, err
+	}
+
+	p.bulk = s
+
+	return s.Read(data)
+}
+
+func (p *PipeConn) SendBulk(data []byte) error {
+	if p.closed {
+		return io.EOF
+	}
+
+	l, err := net.Listen("tcp", ":0")
+	if err != nil {
+		return err
+	}
+
+	defer l.Close()
+
+	msg := Message{
+		Type:          "pipe/bulkstart",
+		CorrelationId: l.Addr().String(),
+	}
+
+	err = p.fc.Push(p.pairM, &msg)
+	if err != nil {
+		return err
+	}
+
+	s, err := l.Accept()
+	if err != nil {
+		return err
+	}
+
+	for {
+		n, err := s.Write(data)
+		if err != nil || n == len(data) {
+			break
+		}
+
+		data = data[n:]
+	}
+
+	return s.Close()
+}
+
+func (fc *FeatureClient) ListenPipe(name string) (*PipeConn, error) {
 	q := "pipe:" + name
 	err := fc.Declare(q)
 	if err != nil {
@@ -401,7 +467,7 @@ func (fc *FeatureClient) ListenPipe(name string) (net.Conn, error) {
 			return nil, err
 		}
 
-		return &pipeConn{
+		return &PipeConn{
 			fc:    fc,
 			pairM: resp.Message.ReplyTo,
 			ownM:  ownM}, nil
@@ -445,7 +511,7 @@ func (fc *FeatureClient) ConnectPipe(name string) (net.Conn, error) {
 			return nil, EProtocolError
 		}
 
-		return &pipeConn{
+		return &PipeConn{
 			fc:    fc,
 			pairM: resp.Message.ReplyTo,
 			ownM:  ownM}, nil
