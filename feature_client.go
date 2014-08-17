@@ -388,14 +388,14 @@ func (p *PipeConn) readBulk(msg *Message, data []byte) (int, error) {
 	return s.Read(data)
 }
 
-func (p *PipeConn) SendBulk(data []byte) error {
+func (p *PipeConn) SendBulk(data io.Reader) (int64, error) {
 	if p.closed {
-		return io.EOF
+		return 0, io.EOF
 	}
 
 	l, err := net.Listen("tcp", ":0")
 	if err != nil {
-		return err
+		return 0, err
 	}
 
 	defer l.Close()
@@ -407,24 +407,18 @@ func (p *PipeConn) SendBulk(data []byte) error {
 
 	err = p.fc.Push(p.pairM, &msg)
 	if err != nil {
-		return err
+		return 0, err
 	}
 
 	s, err := l.Accept()
 	if err != nil {
-		return err
+		return 0, err
 	}
 
-	for {
-		n, err := s.Write(data)
-		if err != nil || n == len(data) {
-			break
-		}
+	defer s.Close()
 
-		data = data[n:]
-	}
-
-	return s.Close()
+	n, err := io.Copy(s, data)
+	return n, err
 }
 
 func (fc *FeatureClient) ListenPipe(name string) (*PipeConn, error) {

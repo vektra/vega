@@ -636,7 +636,9 @@ func TestFeatureClientPipeSendBulk(t *testing.T) {
 	go func() {
 		defer wg.Done()
 		conn, _ := fc.ListenPipe("a")
-		conn.SendBulk([]byte("1"))
+		n, err := conn.SendBulk(bytes.NewReader([]byte("1")))
+		assert.NoError(t, err)
+		assert.Equal(t, 1, n)
 		conn.Close()
 	}()
 
@@ -685,7 +687,7 @@ func TestFeatureClientPipeSendBulkBuffered(t *testing.T) {
 	go func() {
 		defer wg.Done()
 		conn, _ := fc.ListenPipe("a")
-		conn.SendBulk([]byte("hello"))
+		conn.SendBulk(bytes.NewReader([]byte("hello")))
 		conn.Close()
 	}()
 
@@ -740,7 +742,7 @@ func TestFeatureClientPipeSendBulkSwitchesBack(t *testing.T) {
 	go func() {
 		defer wg.Done()
 		conn, _ := fc.ListenPipe("a")
-		conn.SendBulk([]byte("hello"))
+		conn.SendBulk(bytes.NewReader([]byte("hello")))
 		conn.Write([]byte("world"))
 		conn.Close()
 	}()
