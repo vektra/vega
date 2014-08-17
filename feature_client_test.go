@@ -603,7 +603,7 @@ func TestFeatureClientPipeCloseAbandonsMailbox(t *testing.T) {
 
 	conn.Close()
 
-	err = fc.Push(conn.(*PipeConn).ownM, Msg("test"))
+	err = fc.Push(conn.ownM, Msg("test"))
 	assert.Error(t, err)
 }
 
@@ -636,7 +636,7 @@ func TestFeatureClientPipeSendBulk(t *testing.T) {
 	go func() {
 		defer wg.Done()
 		conn, _ := fc.ListenPipe("a")
-		n, err := conn.SendBulk(bytes.NewReader([]byte("1")))
+		n, err := conn.SendBulk(bytes.NewReader([]byte("1")), false)
 		assert.NoError(t, err)
 		assert.Equal(t, 1, n)
 		conn.Close()
@@ -687,7 +687,7 @@ func TestFeatureClientPipeSendBulkBuffered(t *testing.T) {
 	go func() {
 		defer wg.Done()
 		conn, _ := fc.ListenPipe("a")
-		conn.SendBulk(bytes.NewReader([]byte("hello")))
+		conn.SendBulk(bytes.NewReader([]byte("hello")), false)
 		conn.Close()
 	}()
 
@@ -742,7 +742,7 @@ func TestFeatureClientPipeSendBulkSwitchesBack(t *testing.T) {
 	go func() {
 		defer wg.Done()
 		conn, _ := fc.ListenPipe("a")
-		conn.SendBulk(bytes.NewReader([]byte("hello")))
+		conn.SendBulk(bytes.NewReader([]byte("hello")), false)
 		conn.Write([]byte("world"))
 		conn.Close()
 	}()
@@ -769,6 +769,64 @@ func TestFeatureClientPipeSendBulkSwitchesBack(t *testing.T) {
 	n, err = conn.Read(d2)
 	assert.Equal(t, 5, n)
 	assert.Equal(t, []byte("world"), d2)
+
+	wg.Wait()
+}
+
+func TestFeatureClientPipeSendBulkEncrypted(t *testing.T) {
+	serv, err := NewMemService(cPort)
+	if err != nil {
+		panic(err)
+	}
+
+	defer serv.Close()
+	go serv.Accept()
+
+	fc, err := Dial(cPort)
+	if err != nil {
+		panic(err)
+	}
+
+	defer fc.Close()
+
+	fc2, err := Dial(cPort)
+	if err != nil {
+		panic(err)
+	}
+
+	defer fc2.Close()
+
+	var wg sync.WaitGroup
+
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		conn, _ := fc.ListenPipe("a")
+		n, err := conn.SendBulk(bytes.NewReader([]byte("hello")), true)
+		assert.NoError(t, err)
+		assert.Equal(t, 5, n)
+		conn.Close()
+	}()
+
+	runtime.Gosched()
+
+	conn, err := fc.ConnectPipe("a")
+	defer conn.Close()
+
+	assert.NoError(t, err)
+
+	data := make([]byte, 1)
+
+	n, err := conn.Read(data)
+	assert.Equal(t, 1, n)
+	assert.Equal(t, []byte("h"), data)
+
+	d2 := make([]byte, 4)
+
+	n, err = conn.bulk.(*streamWrapper).Conn.Read(d2)
+	assert.Equal(t, 4, n)
+	assert.NotEqual(t, []byte("ello"), d2)
+	assert.NotEqual(t, d2[1], d2[2])
 
 	wg.Wait()
 }

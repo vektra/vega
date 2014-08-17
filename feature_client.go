@@ -1,6 +1,8 @@
 package vega
 
 import (
+	"crypto/aes"
+	"crypto/cipher"
 	"errors"
 	"io"
 	"net"
@@ -375,6 +377,30 @@ func (p *PipeConn) SetWriteDeadline(t time.Time) error {
 	return nil
 }
 
+type streamWrapper struct {
+	net.Conn
+	S cipher.Stream
+}
+
+func (r *streamWrapper) Read(dst []byte) (n int, err error) {
+	n, err = r.Conn.Read(dst)
+	r.S.XORKeyStream(dst[:n], dst[:n])
+	return
+}
+
+func (w *streamWrapper) Write(src []byte) (n int, err error) {
+	c := make([]byte, len(src))
+	w.S.XORKeyStream(c, src)
+	n, err = w.Conn.Write(c)
+	if n != len(src) {
+		if err == nil { // should never happen
+			err = io.ErrShortWrite
+		}
+	}
+
+	return
+}
+
 func (p *PipeConn) readBulk(msg *Message, data []byte) (int, error) {
 	socketId := msg.CorrelationId
 
@@ -383,12 +409,24 @@ func (p *PipeConn) readBulk(msg *Message, data []byte) (int, error) {
 		return 0, err
 	}
 
+	if len(msg.Body) > 0 {
+		block, err := aes.NewCipher(msg.Body)
+		if err != nil {
+			return 0, err
+		}
+
+		var iv [aes.BlockSize]byte
+
+		stream := cipher.NewOFB(block, iv[:])
+		s = &streamWrapper{s, stream}
+	}
+
 	p.bulk = s
 
 	return s.Read(data)
 }
 
-func (p *PipeConn) SendBulk(data io.Reader) (int64, error) {
+func (p *PipeConn) SendBulk(data io.Reader, enc bool) (int64, error) {
 	if p.closed {
 		return 0, io.EOF
 	}
@@ -403,6 +441,19 @@ func (p *PipeConn) SendBulk(data io.Reader) (int64, error) {
 	msg := Message{
 		Type:          "pipe/bulkstart",
 		CorrelationId: l.Addr().String(),
+	}
+
+	if enc {
+		msg.Body = RandomKey(aes.BlockSize)
+		block, err := aes.NewCipher(msg.Body)
+		if err != nil {
+			return 0, err
+		}
+
+		var iv [aes.BlockSize]byte
+
+		stream := cipher.NewOFB(block, iv[:])
+		data = &cipher.StreamReader{S: stream, R: data}
 	}
 
 	err = p.fc.Push(p.pairM, &msg)
@@ -468,7 +519,7 @@ func (fc *FeatureClient) ListenPipe(name string) (*PipeConn, error) {
 	}
 }
 
-func (fc *FeatureClient) ConnectPipe(name string) (net.Conn, error) {
+func (fc *FeatureClient) ConnectPipe(name string) (*PipeConn, error) {
 	ownM := RandomQueue()
 	fc.EphemeralDeclare(ownM)
 

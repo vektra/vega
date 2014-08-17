@@ -158,3 +158,17 @@ func RandomQueue() string {
 func RandomID() string {
 	return "m" + generateUUID()
 }
+
+func RandomKey(size int) []byte {
+	key := make([]byte, size)
+	n, err := crand.Read(key)
+	if n != size {
+		panic("Not enough random material returned")
+	}
+
+	if err != nil {
+		panic(err)
+	}
+
+	return key
+}
