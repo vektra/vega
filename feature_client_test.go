@@ -403,6 +403,163 @@ func TestFeatureClientPipePrependBufferInOneCall(t *testing.T) {
 	assert.Equal(t, []byte("oworld"), d3)
 }
 
+func TestFeatureClientPipeReadMultipleMessages(t *testing.T) {
+	serv, err := NewMemService(cPort)
+	if err != nil {
+		panic(err)
+	}
+
+	defer serv.Close()
+	go serv.Accept()
+
+	fc, err := Dial(cPort)
+	if err != nil {
+		panic(err)
+	}
+
+	defer fc.Close()
+
+	fc2, err := Dial(cPort)
+	if err != nil {
+		panic(err)
+	}
+
+	defer fc2.Close()
+
+	latch := make(chan bool)
+
+	var wg sync.WaitGroup
+
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		conn, _ := fc.ListenPipe("a")
+		conn.Write([]byte("hello"))
+		conn.Write([]byte("world"))
+		<-latch
+		conn.Close()
+	}()
+
+	runtime.Gosched()
+
+	conn, err := fc.ConnectPipe("a")
+	assert.NoError(t, err)
+
+	data := make([]byte, 20)
+
+	n, err := conn.Read(data)
+	assert.NoError(t, err)
+	assert.Equal(t, 10, n)
+
+	assert.Equal(t, []byte("helloworld"), data[:n])
+
+	latch <- true
+
+	wg.Wait()
+}
+
+func TestFeatureClientPipeReadMultipleMessagesThenClose(t *testing.T) {
+	serv, err := NewMemService(cPort)
+	if err != nil {
+		panic(err)
+	}
+
+	defer serv.Close()
+	go serv.Accept()
+
+	fc, err := Dial(cPort)
+	if err != nil {
+		panic(err)
+	}
+
+	defer fc.Close()
+
+	fc2, err := Dial(cPort)
+	if err != nil {
+		panic(err)
+	}
+
+	defer fc2.Close()
+
+	var wg sync.WaitGroup
+
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		conn, _ := fc.ListenPipe("a")
+		conn.Write([]byte("hello"))
+		conn.Write([]byte("world"))
+		conn.Close()
+	}()
+
+	runtime.Gosched()
+
+	conn, err := fc.ConnectPipe("a")
+	assert.NoError(t, err)
+
+	wg.Wait()
+
+	data := make([]byte, 20)
+
+	n, err := conn.Read(data)
+	assert.NoError(t, err)
+	assert.Equal(t, 10, n)
+
+	assert.Equal(t, []byte("helloworld"), data[:n])
+}
+
+func TestFeatureClientPipeReadDeadline(t *testing.T) {
+	serv, err := NewMemService(cPort)
+	if err != nil {
+		panic(err)
+	}
+
+	defer serv.Close()
+	go serv.Accept()
+
+	fc, err := Dial(cPort)
+	if err != nil {
+		panic(err)
+	}
+
+	defer fc.Close()
+
+	fc2, err := Dial(cPort)
+	if err != nil {
+		panic(err)
+	}
+
+	defer fc2.Close()
+
+	var wg sync.WaitGroup
+
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		conn, _ := fc.ListenPipe("a")
+		time.Sleep(100 * time.Millisecond)
+		conn.Write([]byte("1"))
+		conn.Close()
+	}()
+
+	runtime.Gosched()
+
+	conn, err := fc.ConnectPipe("a")
+	defer conn.Close()
+
+	assert.NoError(t, err)
+
+	conn.SetReadDeadline(time.Now().Add(50 * time.Millisecond))
+
+	data := make([]byte, 1)
+
+	n, err := conn.Read(data)
+	assert.Equal(t, 0, n)
+	assert.Equal(t, ETimeout, err)
+
+	wg.Wait()
+}
+
 func TestFeatureClientPipeCloseAbandonsMailbox(t *testing.T) {
 	serv, err := NewMemService(cPort)
 	if err != nil {

@@ -1,6 +1,7 @@
 package vega
 
 import (
+	"errors"
 	"io"
 	"net"
 	"strings"
@@ -193,27 +194,25 @@ func (p *pipeAddr) String() string {
 }
 
 type pipeConn struct {
-	fc      *FeatureClient
-	pairM   string
-	ownM    string
-	closed  bool
-	abandon bool
-	buffer  []byte
+	fc     *FeatureClient
+	pairM  string
+	ownM   string
+	closed bool
+	buffer []byte
+
+	readDeadline time.Time
 }
 
 func (p *pipeConn) Close() error {
-	if p.abandon {
+	if p.closed {
 		return nil
 	}
 
-	p.abandon = true
-
-	msg := Message{
-		Type: "pipe/close",
-	}
+	p.closed = true
 
 	p.fc.Abandon(p.ownM)
-	return p.fc.Push(p.pairM, &msg)
+	p.fc.Push(p.pairM, &Message{Type: "pipe/close"})
+	return nil
 }
 
 func (p *pipeConn) LocalAddr() net.Addr {
@@ -224,10 +223,15 @@ func (p *pipeConn) RemoteAddr() net.Addr {
 	return &pipeAddr{p.pairM}
 }
 
+var ETimeout = errors.New("operation timeout")
+
 func (p *pipeConn) Read(b []byte) (int, error) {
 	if p.closed {
 		return 0, io.EOF
 	}
+
+	total := 0
+	timeout := 1 * time.Minute
 
 	if p.buffer != nil {
 		n := len(p.buffer)
@@ -242,50 +246,49 @@ func (p *pipeConn) Read(b []byte) (int, error) {
 		copy(b, p.buffer)
 		p.buffer = nil
 
-		if bn > n {
-			resp, err := p.fc.Poll(p.ownM)
-			if err != nil {
-				return n, nil
-			}
-
-			err = resp.Ack()
-			if err != nil {
-				return n, nil
-			}
-
-			if resp.Message.Type == "pipe/close" {
-				p.closed = true
-				return n, nil
-			}
-
-			b = b[n:]
-
-			bn2 := len(b)
-			n2 := len(resp.Message.Body)
-
-			if bn2 < n2 {
-				copy(b, resp.Message.Body[:bn2])
-				p.buffer = resp.Message.Body[bn2:]
-				return n + bn2, nil
-			}
-
-			copy(b, resp.Message.Body)
-			p.buffer = nil
-
-			return n + n2, nil
+		if bn == n {
+			return n, nil
 		}
 
-		return n, nil
+		total += n
+		timeout = 0 * time.Second
+		b = b[n:]
 	}
 
 	for {
-		resp, err := p.fc.LongPoll(p.ownM, 1*time.Minute)
-		if err != nil {
-			return 0, err
-		}
+		var resp *Delivery
+		var err error
 
-		if resp == nil {
-			continue
+		if timeout == 0 {
+			resp, err = p.fc.Poll(p.ownM)
+
+			if resp == nil {
+				if total > 0 {
+					return total, nil
+				}
+
+				return 0, err
+			}
+		} else {
+			if !p.readDeadline.IsZero() {
+				dur := p.readDeadline.Sub(time.Now())
+				if dur < timeout {
+					timeout = dur
+				}
+			}
+
+			resp, err = p.fc.LongPoll(p.ownM, timeout)
+			if err != nil {
+				return 0, err
+			}
+
+			if resp == nil {
+				if !p.readDeadline.IsZero() && time.Now().After(p.readDeadline) {
+					return 0, ETimeout
+				}
+
+				continue
+			}
 		}
 
 		err = resp.Ack()
@@ -294,7 +297,12 @@ func (p *pipeConn) Read(b []byte) (int, error) {
 		}
 
 		if resp.Message.Type == "pipe/close" {
-			p.closed = true
+			p.Close()
+
+			if total > 0 {
+				return total, nil
+			}
+
 			return 0, io.EOF
 		}
 
@@ -304,13 +312,21 @@ func (p *pipeConn) Read(b []byte) (int, error) {
 		if bn < n {
 			copy(b, resp.Message.Body[:bn])
 			p.buffer = resp.Message.Body[bn:]
-			return bn, nil
+			return bn + total, nil
 		}
 
 		copy(b, resp.Message.Body)
 		p.buffer = nil
 
-		return n, nil
+		total += n
+
+		if bn == n {
+			return total, nil
+		}
+
+		timeout = 0 * time.Second
+
+		b = b[n:]
 	}
 }
 
@@ -332,10 +348,12 @@ func (p *pipeConn) Write(b []byte) (int, error) {
 }
 
 func (p *pipeConn) SetDeadline(t time.Time) error {
+	p.readDeadline = t
 	return nil
 }
 
 func (p *pipeConn) SetReadDeadline(t time.Time) error {
+	p.readDeadline = t
 	return nil
 }
 
