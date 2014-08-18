@@ -3,6 +3,7 @@ package vega
 import (
 	"crypto/aes"
 	"crypto/cipher"
+	"crypto/sha256"
 	"errors"
 	"io"
 	"net"
@@ -203,7 +204,19 @@ type PipeConn struct {
 	buffer []byte
 	bulk   net.Conn
 
+	sharedKey    []byte
 	readDeadline time.Time
+}
+
+func (p *PipeConn) ComputeSharedKey() {
+	key := make([]byte, aes.BlockSize)
+
+	s1 := sha256.Sum256([]byte(p.ownM))
+	s2 := sha256.Sum256([]byte(p.pairM))
+
+	XORBytes(key, s1[:aes.BlockSize], s2[:aes.BlockSize])
+
+	p.sharedKey = key
 }
 
 func (p *PipeConn) Close() error {
@@ -409,24 +422,20 @@ func (p *PipeConn) readBulk(msg *Message, data []byte) (int, error) {
 		return 0, err
 	}
 
-	if len(msg.Body) > 0 {
-		block, err := aes.NewCipher(msg.Body)
-		if err != nil {
-			return 0, err
-		}
-
-		var iv [aes.BlockSize]byte
-
-		stream := cipher.NewOFB(block, iv[:])
-		s = &streamWrapper{s, stream}
+	block, err := aes.NewCipher(p.sharedKey)
+	if err != nil {
+		return 0, err
 	}
+
+	stream := cipher.NewOFB(block, msg.Body)
+	s = &streamWrapper{s, stream}
 
 	p.bulk = s
 
 	return s.Read(data)
 }
 
-func (p *PipeConn) SendBulk(data io.Reader, enc bool) (int64, error) {
+func (p *PipeConn) SendBulk(data io.Reader) (int64, error) {
 	if p.closed {
 		return 0, io.EOF
 	}
@@ -443,18 +452,15 @@ func (p *PipeConn) SendBulk(data io.Reader, enc bool) (int64, error) {
 		CorrelationId: l.Addr().String(),
 	}
 
-	if enc {
-		msg.Body = RandomKey(aes.BlockSize)
-		block, err := aes.NewCipher(msg.Body)
-		if err != nil {
-			return 0, err
-		}
+	msg.Body = RandomIV(aes.BlockSize)
 
-		var iv [aes.BlockSize]byte
-
-		stream := cipher.NewOFB(block, iv[:])
-		data = &cipher.StreamReader{S: stream, R: data}
+	block, err := aes.NewCipher(p.sharedKey)
+	if err != nil {
+		return 0, err
 	}
+
+	stream := cipher.NewOFB(block, msg.Body)
+	data = &cipher.StreamReader{S: stream, R: data}
 
 	err = p.fc.Push(p.pairM, &msg)
 	if err != nil {
@@ -512,10 +518,15 @@ func (fc *FeatureClient) ListenPipe(name string) (*PipeConn, error) {
 			return nil, err
 		}
 
-		return &PipeConn{
+		pc := &PipeConn{
 			fc:    fc,
 			pairM: resp.Message.ReplyTo,
-			ownM:  ownM}, nil
+			ownM:  ownM,
+		}
+
+		pc.ComputeSharedKey()
+
+		return pc, nil
 	}
 }
 
@@ -556,9 +567,14 @@ func (fc *FeatureClient) ConnectPipe(name string) (*PipeConn, error) {
 			return nil, EProtocolError
 		}
 
-		return &PipeConn{
+		pc := &PipeConn{
 			fc:    fc,
 			pairM: resp.Message.ReplyTo,
-			ownM:  ownM}, nil
+			ownM:  ownM,
+		}
+
+		pc.ComputeSharedKey()
+
+		return pc, nil
 	}
 }

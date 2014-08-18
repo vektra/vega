@@ -636,7 +636,7 @@ func TestFeatureClientPipeSendBulk(t *testing.T) {
 	go func() {
 		defer wg.Done()
 		conn, _ := fc.ListenPipe("a")
-		n, err := conn.SendBulk(bytes.NewReader([]byte("1")), false)
+		n, err := conn.SendBulk(bytes.NewReader([]byte("1")))
 		assert.NoError(t, err)
 		assert.Equal(t, 1, n)
 		conn.Close()
@@ -687,7 +687,7 @@ func TestFeatureClientPipeSendBulkBuffered(t *testing.T) {
 	go func() {
 		defer wg.Done()
 		conn, _ := fc.ListenPipe("a")
-		conn.SendBulk(bytes.NewReader([]byte("hello")), false)
+		conn.SendBulk(bytes.NewReader([]byte("hello")))
 		conn.Close()
 	}()
 
@@ -742,7 +742,7 @@ func TestFeatureClientPipeSendBulkSwitchesBack(t *testing.T) {
 	go func() {
 		defer wg.Done()
 		conn, _ := fc.ListenPipe("a")
-		conn.SendBulk(bytes.NewReader([]byte("hello")), false)
+		conn.SendBulk(bytes.NewReader([]byte("hello")))
 		conn.Write([]byte("world"))
 		conn.Close()
 	}()
@@ -802,7 +802,7 @@ func TestFeatureClientPipeSendBulkEncrypted(t *testing.T) {
 	go func() {
 		defer wg.Done()
 		conn, _ := fc.ListenPipe("a")
-		n, err := conn.SendBulk(bytes.NewReader([]byte("hello")), true)
+		n, err := conn.SendBulk(bytes.NewReader([]byte("hello")))
 		assert.NoError(t, err)
 		assert.Equal(t, 5, n)
 		conn.Close()

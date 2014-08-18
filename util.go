@@ -172,3 +172,31 @@ func RandomKey(size int) []byte {
 
 	return key
 }
+
+func RandomIV(size int) []byte {
+	m := size % 8
+	if m != 0 {
+		size += (8 - m)
+	}
+
+	iv := make([]byte, size)
+
+	for i := 0; i < size; i += 8 {
+		binary.BigEndian.PutUint64(iv[i:i+8], uint64(randGen.Int63()))
+	}
+
+	return iv
+}
+
+func XORBytes(dst, a, b []byte) int {
+	n := len(a)
+	if len(b) < n {
+		n = len(b)
+	}
+
+	for i := 0; i < n; i++ {
+		dst[i] = a[i] ^ b[i]
+	}
+
+	return n
+}
