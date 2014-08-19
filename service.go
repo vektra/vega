@@ -10,6 +10,7 @@ import (
 
 	"github.com/hashicorp/yamux"
 	"github.com/ugorji/go/codec"
+	"github.com/vektra/seconn"
 )
 
 var msgpack codec.MsgpackHandle
@@ -65,7 +66,7 @@ func (s *Service) Close() error {
 	return nil
 }
 
-func (s *Service) Accept() error {
+func (s *Service) AcceptInsecure() error {
 	defer s.wg.Done()
 
 	for {
@@ -76,6 +77,27 @@ func (s *Service) Accept() error {
 
 		s.wg.Add(1)
 		go s.acceptMux(conn)
+	}
+
+	return nil
+}
+
+func (s *Service) Accept() error {
+	defer s.wg.Done()
+
+	for {
+		conn, err := s.listener.Accept()
+		if err != nil {
+			return err
+		}
+
+		sec, err := seconn.NewServer(conn)
+		if err != nil {
+			return err
+		}
+
+		s.wg.Add(1)
+		go s.acceptMux(sec)
 	}
 
 	return nil
@@ -460,13 +482,22 @@ func (s *Service) handleNack(c net.Conn, msg *NackMessage, data *clientData) err
 }
 
 type Client struct {
-	conn net.Conn
-	sess *yamux.Session
-	addr string
+	conn   net.Conn
+	sess   *yamux.Session
+	addr   string
+	secure bool
 }
 
 func NewClient(addr string) (*Client, error) {
-	cl := &Client{nil, nil, addr}
+	cl := &Client{nil, nil, addr, true}
+
+	cl.Session()
+
+	return cl, nil
+}
+
+func NewInsecureClient(addr string) (*Client, error) {
+	cl := &Client{nil, nil, addr, false}
 
 	cl.Session()
 
@@ -489,7 +520,16 @@ func (c *Client) Session() (*yamux.Session, error) {
 			return nil, err
 		}
 
-		c.conn = s
+		if c.secure {
+			sec, err := seconn.NewClient(s)
+			if err != nil {
+				return nil, err
+			}
+
+			c.conn = sec
+		} else {
+			c.conn = s
+		}
 
 		sess, err := yamux.Client(c.conn, muxConfig)
 		if err != nil {
