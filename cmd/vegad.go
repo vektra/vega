@@ -10,7 +10,8 @@ import (
 	vega "./.."
 )
 
-var fPort = flag.Int("port", vega.DefaultPort, "port to listen on")
+var fPort = flag.Int("port", vega.DefaultPort, "port to listen on localhost")
+var fClusterPort = flag.Int("cluster-port", vega.DefaultClusterPort, "port to listen on for cluster membership")
 var fHttpPort = flag.Int("http-port", vega.DefaultHTTPPort, "port to listen on")
 var fData = flag.String("data-dir", vega.DefaultPath, "path to store data in")
 
@@ -18,7 +19,7 @@ func main() {
 	flag.Parse()
 
 	cfg := &vega.ConsulNodeConfig{
-		ListenPort: *fPort,
+		ListenPort: *fClusterPort,
 		DataPath:   *fData,
 	}
 
@@ -31,6 +32,7 @@ func main() {
 	go node.Accept()
 
 	var h *vega.HTTPService
+	var local *vega.Service
 
 	if *fHttpPort != 0 {
 		h = vega.NewHTTPService(
@@ -47,9 +49,20 @@ func main() {
 		go h.Accept()
 	}
 
-	fmt.Printf("Booted mbd:\n")
-	fmt.Printf("  ListenPort: %d\n", cfg.ListenPort)
-	fmt.Printf("  DataPath: %s\n", cfg.DataPath)
+	if *fPort != 0 {
+		local, err = vega.NewService(fmt.Sprintf("127.0.0.1:%d", *fPort), node)
+		if err != nil {
+			log.Fatalf("Unable to create local server: %s", err)
+			os.Exit(1)
+		}
+
+		go local.AcceptInsecure()
+	}
+
+	fmt.Printf("Booted vegad:\n")
+	fmt.Printf("    LocalPort: %d\n", *fPort)
+	fmt.Printf("  ClusterPort: %d\n", cfg.ListenPort)
+	fmt.Printf("     DataPath: %s\n", cfg.DataPath)
 	fmt.Printf("  AdvertiseId: %s\n", cfg.AdvertiseID())
 
 	if h == nil {
@@ -68,6 +81,10 @@ func main() {
 
 	if h != nil {
 		h.Close()
+	}
+
+	if local != nil {
+		local.Close()
 	}
 
 	node.Cleanup()

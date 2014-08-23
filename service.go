@@ -13,6 +13,8 @@ import (
 	"github.com/vektra/seconn"
 )
 
+const DefaultPort = 8475
+
 var msgpack codec.MsgpackHandle
 
 var EProtocolError = errors.New("protocol error")

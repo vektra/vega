@@ -11,7 +11,7 @@ type ConsulClusterNode struct {
 	service *Service
 }
 
-const DefaultPort = 8475
+const DefaultClusterPort = 8476
 
 const DefaultPath = "/var/lib/mailbox"
 

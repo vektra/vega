@@ -1,4 +1,4 @@
-mailbox
+Vega
 =======
 
-A distributed mailbox/queue system
+A distributed mailbox system
