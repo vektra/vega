@@ -13,7 +13,7 @@ type ConsulClusterNode struct {
 
 const DefaultClusterPort = 8476
 
-const DefaultPath = "/var/lib/mailbox"
+const DefaultPath = "/var/lib/vega"
 
 type ConsulNodeConfig struct {
 	AdvertiseAddr string
