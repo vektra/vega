@@ -12,15 +12,17 @@ import (
 
 var fPort = flag.Int("port", vega.DefaultPort, "port to listen on localhost")
 var fClusterPort = flag.Int("cluster-port", vega.DefaultClusterPort, "port to listen on for cluster membership")
-var fHttpPort = flag.Int("http-port", vega.DefaultHTTPPort, "port to listen on")
+var fHttpPort = flag.Int("http-port", 0, "port to listen on")
 var fData = flag.String("data-dir", vega.DefaultPath, "path to store data in")
+var fAdvertise = flag.String("adveritse", "", "Address to advertise vega on")
 
 func main() {
 	flag.Parse()
 
 	cfg := &vega.ConsulNodeConfig{
-		ListenPort: *fClusterPort,
-		DataPath:   *fData,
+		ListenPort:    *fClusterPort,
+		DataPath:      *fData,
+		AdvertiseAddr: *fAdvertise,
 	}
 
 	node, err := vega.NewConsulClusterNode(cfg)

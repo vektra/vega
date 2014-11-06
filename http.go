@@ -12,7 +12,7 @@ import (
 	"github.com/ugorji/go/codec"
 )
 
-var DefaultHTTPPort = DefaultPort + 1
+var DefaultHTTPPort = DefaultPort + 2
 
 var ctMsgPack = "application/x-msgpack"
 var ctUrlEncoded = "application/x-www-form-urlencoded"
