@@ -59,3 +59,7 @@ func (cn *clusterNode) Poll(name string) (*Delivery, error) {
 func (cn *clusterNode) LongPoll(name string, til time.Duration) (*Delivery, error) {
 	return cn.local.LongPoll(name, til)
 }
+
+func (cn *clusterNode) LongPollCancelable(name string, til time.Duration, done chan struct{}) (*Delivery, error) {
+	return cn.local.LongPollCancelable(name, til, done)
+}

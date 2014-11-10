@@ -46,6 +46,7 @@ type Storage interface {
 	Push(string, *Message) error
 	Poll(string) (*Delivery, error)
 	LongPoll(string, time.Duration) (*Delivery, error)
+	LongPollCancelable(string, time.Duration, chan struct{}) (*Delivery, error)
 }
 
 type Pusher interface {

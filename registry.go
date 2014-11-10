@@ -1,9 +1,10 @@
 package vega
 
 import (
-	"errors"
 	"sync"
 	"time"
+
+	"github.com/vektra/errors"
 )
 
 type Registry struct {
@@ -51,7 +52,7 @@ func (r *Registry) LongPoll(name string, til time.Duration) (*Delivery, error) {
 	if !ok {
 		debugf("missing mailbox %s\n", name)
 		r.Unlock()
-		return nil, ENoMailbox
+		return nil, errors.Subject(ENoMailbox, name)
 	}
 
 	debugf("long polling %s: %#v\n", name, mailbox)
@@ -89,7 +90,7 @@ func (r *Registry) LongPollCancelable(name string, til time.Duration, done chan 
 	if !ok {
 		debugf("missing mailbox %s\n", name)
 		r.Unlock()
-		return nil, ENoMailbox
+		return nil, errors.Subject(ENoMailbox, name)
 	}
 
 	debugf("long polling %s: %#v\n", name, mailbox)
@@ -157,12 +158,14 @@ func (r *Registry) Push(name string, value *Message) error {
 		return mailbox.Push(value)
 	}
 
-	return ENoMailbox
+	return errors.Subject(ENoMailbox, name)
 }
 
 func (r *Registry) Declare(name string) error {
 	r.Lock()
 	defer r.Unlock()
+
+	debugf("declaring mailbox: '%s'\n", name)
 
 	if _, ok := r.mailboxes[name]; !ok {
 		r.mailboxes[name] = r.creator(name)

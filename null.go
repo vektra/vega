@@ -12,4 +12,8 @@ func (ns *nullStorage) LongPoll(string, time.Duration) (*Delivery, error) {
 	return nil, nil
 }
 
+func (ns *nullStorage) LongPollCancelable(string, time.Duration, chan struct{}) (*Delivery, error) {
+	return nil, nil
+}
+
 var NullStorage = &nullStorage{}

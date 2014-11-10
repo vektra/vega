@@ -32,12 +32,14 @@ type consulRoutingTable struct {
 	cache map[string]*cachedPusher
 }
 
+var ConsulRoutingPrefix = "mailbox-routing"
+
 func NewConsulRoutingTable(id string) (*consulRoutingTable, error) {
 	h := sha1.New()
 	h.Write([]byte(id))
 	k := hex.EncodeToString(h.Sum(nil))
 
-	consul := cache.NewConsulKVCache("mailbox-routing")
+	consul := cache.NewConsulKVCache(ConsulRoutingPrefix)
 
 	go consul.BackgroundUpdate()
 

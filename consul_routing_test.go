@@ -5,6 +5,10 @@ import (
 	"time"
 )
 
+func init() {
+	ConsulRoutingPrefix = "test-mailbox-routing"
+}
+
 func TestConsulRoutingTable(t *testing.T) {
 	m1 := NewMemRegistry()
 

@@ -1,6 +1,7 @@
 package vega
 
 import (
+	"fmt"
 	"strings"
 	"sync"
 	"time"
@@ -8,6 +9,17 @@ import (
 
 func Dial(addr string) (*FeatureClient, error) {
 	client, err := NewClient(addr)
+	if err != nil {
+		return nil, err
+	}
+
+	return &FeatureClient{
+		Client: client,
+	}, nil
+}
+
+func Local() (*FeatureClient, error) {
+	client, err := NewInsecureClient(fmt.Sprintf("127.0.0.1:%d", DefaultPort))
 	if err != nil {
 		return nil, err
 	}

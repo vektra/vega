@@ -2,6 +2,7 @@ package vega
 
 import (
 	"bytes"
+	"io"
 	"runtime"
 	"sync"
 	"testing"
@@ -810,7 +811,7 @@ func TestFeatureClientPipeSendBulkEncrypted(t *testing.T) {
 
 	runtime.Gosched()
 
-	conn, err := fc.ConnectPipe("a")
+	conn, err := fc2.ConnectPipe("a")
 	defer conn.Close()
 
 	assert.NoError(t, err)
@@ -829,4 +830,63 @@ func TestFeatureClientPipeSendBulkEncrypted(t *testing.T) {
 	assert.NotEqual(t, d2[1], d2[2])
 
 	wg.Wait()
+}
+
+func TestFeatureClientPipeDetectsClosure(t *testing.T) {
+	serv, err := NewMemService(cPort)
+	if err != nil {
+		panic(err)
+	}
+
+	defer serv.Close()
+	go serv.Accept()
+
+	fc, err := Dial(cPort)
+	if err != nil {
+		panic(err)
+	}
+
+	defer fc.Close()
+
+	fc2, err := Dial(cPort)
+	if err != nil {
+		panic(err)
+	}
+
+	defer fc2.Close()
+
+	var wg sync.WaitGroup
+
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		lp, _ := fc.ListenPipe("a")
+		lp.Write([]byte("hello"))
+		fc.Client.conn.Close()
+	}()
+
+	runtime.Gosched()
+
+	conn, err := fc2.ConnectPipe("a")
+	assert.NoError(t, err)
+
+	data := make([]byte, 5)
+
+	_, err = conn.Read(data)
+	assert.NoError(t, err)
+
+	done := make(chan error)
+
+	go func() {
+		debugf("read after closed\n")
+		_, err := conn.Read(data)
+		done <- err
+	}()
+
+	select {
+	case <-time.Tick(1 * time.Second):
+		t.Fatal("read did not detect closure of other side")
+	case err = <-done:
+		assert.Equal(t, err, io.EOF)
+	}
 }
