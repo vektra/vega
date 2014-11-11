@@ -13,7 +13,8 @@ type clusterNode struct {
 	local  *Registry
 	disk   *diskStorage
 
-	subscriptions []*Subscription
+	setupSubscriber bool
+	subscriptions   []*Subscription
 }
 
 func NewClusterNode(path string, router *Router) (*clusterNode, error) {
@@ -71,7 +72,10 @@ func (cn *clusterNode) subscribe(msg *Message) error {
 
 	debugf("doing subscribe...\n")
 
-	cn.router.Add(":publish", &publishedPusher{cn})
+	if !cn.setupSubscriber {
+		cn.router.Add(":publish", &publishedPusher{cn})
+		cn.setupSubscriber = true
+	}
 
 	sub := ParseSubscription(msg.CorrelationId)
 	sub.Mailbox = msg.ReplyTo
