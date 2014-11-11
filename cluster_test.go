@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestClusterBadPath(t *testing.T) {
@@ -244,4 +245,117 @@ func TestClusterAbandon(t *testing.T) {
 
 	err = cn.Push("a", payload)
 	assert.Error(t, err, "queue was not abandoned")
+}
+
+func TestClusterPubSub(t *testing.T) {
+	dir, err := ioutil.TempDir("", "mailbox")
+	if err != nil {
+		panic(err)
+	}
+
+	defer os.RemoveAll(dir)
+
+	cn, err := NewMemClusterNode(dir)
+	if err != nil {
+		panic(err)
+	}
+
+	defer cn.Close()
+
+	err = cn.Declare("a")
+	require.NoError(t, err)
+
+	err = cn.Push(":subscribe", &Message{ReplyTo: "a", CorrelationId: "foo"})
+	require.NoError(t, err)
+
+	err = cn.Push(":publish", &Message{CorrelationId: "foo", Body: []byte("hello")})
+	require.NoError(t, err)
+
+	msg, err := cn.disk.Mailbox("a").Poll()
+
+	assert.Equal(t, []byte("hello"), msg.Body, "message was not stored locally")
+}
+
+func TestClusterPubSubBetweenNodes(t *testing.T) {
+	dir, err := ioutil.TempDir("", "mailbox")
+	if err != nil {
+		panic(err)
+	}
+
+	defer os.RemoveAll(dir)
+
+	cn, err := NewMemClusterNode(dir)
+	if err != nil {
+		panic(err)
+	}
+
+	defer cn.Close()
+
+	dir2, err := ioutil.TempDir("", "mailbox")
+	if err != nil {
+		panic(err)
+	}
+
+	defer os.RemoveAll(dir2)
+
+	cn2, err := NewMemClusterNode(dir2)
+	if err != nil {
+		panic(err)
+	}
+
+	defer cn2.Close()
+
+	// Setup 2 service objects
+
+	s1, err := NewService(cPort, cn)
+	if err != nil {
+		panic(err)
+	}
+
+	defer s1.Close()
+	go s1.Accept()
+
+	s2, err := NewService(cPort2, cn2)
+	if err != nil {
+		panic(err)
+	}
+
+	defer s2.Close()
+	go s2.Accept()
+
+	// Wire up a client going to s1
+
+	toS1, err := NewClient(cPort)
+	if err != nil {
+		panic(err)
+	}
+
+	toS1.Declare("a")
+	err = toS1.Push(":subscribe", &Message{ReplyTo: "a", CorrelationId: "foo"})
+	require.NoError(t, err)
+
+	cn2.AddRoute(":publish", toS1)
+
+	// Push data into cn2 and see it show up in cn
+
+	toS2, err := NewClient(cPort2)
+	if err != nil {
+		panic(err)
+	}
+
+	msg := &Message{CorrelationId: "foo", Body: []byte("between nodes")}
+
+	err = toS2.Push(":publish", msg)
+	require.NoError(t, err)
+
+	debugf("polling\n")
+
+	ret, err := toS1.Poll("a")
+	if err != nil {
+		panic(err)
+	}
+
+	require.NotNil(t, ret)
+
+	assert.True(t, msg.Equal(ret.Message), "message did not route properly")
 }

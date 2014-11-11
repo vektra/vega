@@ -509,6 +509,8 @@ func (s *Service) handleInternal(c net.Conn, msg *Push, data *clientData) error 
 	case ":lwt":
 		debugf("%s: setup LWT", s.Address)
 		err = s.setupLWT(msg.Message, data)
+	case ":publish", ":subscribe":
+		err = s.Registry.Push(msg.Name, msg.Message)
 	default:
 		err = errors.Subject(ErrUknownSystemMailbox, msg.Name)
 	}
