@@ -1,11 +1,19 @@
 package vega
 
-import "time"
+import (
+	"sync"
+	"time"
+
+	"github.com/vektra/errors"
+)
 
 type clusterNode struct {
+	lock   sync.Mutex
 	router *Router
 	local  *Registry
 	disk   *diskStorage
+
+	subscriptions []*Subscription
 }
 
 func NewClusterNode(path string, router *Router) (*clusterNode, error) {
@@ -48,8 +56,63 @@ func (cn *clusterNode) Abandon(name string) error {
 	return cn.router.Remove(name)
 }
 
+type publishedPusher struct {
+	*clusterNode
+}
+
+func (pp *publishedPusher) Push(name string, msg *Message) error {
+	debugf("remote publish received!\n")
+	return pp.publishLocally(msg)
+}
+
+func (cn *clusterNode) subscribe(msg *Message) error {
+	cn.lock.Lock()
+	defer cn.lock.Unlock()
+
+	debugf("doing subscribe...\n")
+
+	cn.router.Add(":publish", &publishedPusher{cn})
+
+	sub := ParseSubscription(msg.CorrelationId)
+	sub.Mailbox = msg.ReplyTo
+
+	cn.subscriptions = append(cn.subscriptions, sub)
+
+	return nil
+}
+
+func (cn *clusterNode) publishLocally(msg *Message) error {
+	cn.lock.Lock()
+	defer cn.lock.Unlock()
+
+	for _, sub := range cn.subscriptions {
+		if sub.Match(msg.CorrelationId) {
+			cn.router.Push(sub.Mailbox, msg)
+		}
+	}
+
+	return nil
+}
+
+func (cn *clusterNode) publish(msg *Message) error {
+	debugf("performing publish\n")
+	err := cn.publishLocally(msg)
+	if err != nil {
+		return errors.Context(err, "publishLocally")
+	}
+
+	return cn.router.Push(":publish", msg)
+}
+
 func (cn *clusterNode) Push(name string, msg *Message) error {
-	return cn.router.Push(name, msg)
+	switch name {
+	case ":subscribe":
+		return cn.subscribe(msg)
+	case ":publish":
+		return cn.publish(msg)
+	default:
+		return cn.router.Push(name, msg)
+	}
 }
 
 func (cn *clusterNode) Poll(name string) (*Delivery, error) {
@@ -58,4 +121,8 @@ func (cn *clusterNode) Poll(name string) (*Delivery, error) {
 
 func (cn *clusterNode) LongPoll(name string, til time.Duration) (*Delivery, error) {
 	return cn.local.LongPoll(name, til)
+}
+
+func (cn *clusterNode) LongPollCancelable(name string, til time.Duration, done chan struct{}) (*Delivery, error) {
+	return cn.local.LongPollCancelable(name, til, done)
 }

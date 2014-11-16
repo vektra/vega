@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 const cPort = "127.0.0.1:34000"
@@ -461,4 +462,99 @@ func TestServiceEphemeralDeclare(t *testing.T) {
 
 	err = c2.Push("e-a", payload)
 	assert.Error(t, err)
+}
+
+func TestServiceDeclareLWT(t *testing.T) {
+	serv, err := NewMemService(cPort)
+	if err != nil {
+		panic(err)
+	}
+
+	defer serv.Close()
+	go serv.Accept()
+
+	c1, err := NewClient(cPort)
+	if err != nil {
+		panic(err)
+	}
+
+	defer c1.Close()
+
+	c2, err := NewClient(cPort)
+	if err != nil {
+		panic(err)
+	}
+
+	defer c2.Close()
+
+	c1.Declare("a")
+
+	msg := &Message{
+		ReplyTo: "a",
+		Type:    "death",
+	}
+
+	c2.Push(":lwt", msg)
+
+	lwt, err := c2.Poll(":lwt")
+	require.NoError(t, err)
+
+	assert.Equal(t, lwt.Message, msg)
+
+	lwt, err = c2.LongPoll(":lwt", 1*time.Second)
+	require.NoError(t, err)
+
+	assert.Equal(t, lwt.Message, msg)
+
+	debugf("closing c2\n")
+	c2.Close()
+
+	got, err := c1.Poll("a")
+	require.NoError(t, err)
+
+	assert.Equal(t, "death", got.Message.Type)
+}
+
+func TestServiceDeclareLWTOnEphemeral(t *testing.T) {
+	serv, err := NewMemService(cPort)
+	if err != nil {
+		panic(err)
+	}
+
+	defer serv.Close()
+	go serv.Accept()
+
+	c1, err := NewClient(cPort)
+	if err != nil {
+		panic(err)
+	}
+
+	defer c1.Close()
+
+	c2, err := NewClient(cPort)
+	if err != nil {
+		panic(err)
+	}
+
+	defer c2.Close()
+
+	c1.Declare("a")
+	c2.EphemeralDeclare("e-a")
+
+	msg := &Message{
+		ReplyTo:       "a",
+		CorrelationId: "e-a",
+		Type:          "death",
+	}
+
+	c2.Push(":lwt", msg)
+
+	c2.Abandon("e-a")
+
+	got, err := c1.Poll("a")
+	require.NoError(t, err)
+
+	require.NotNil(t, got)
+
+	assert.Equal(t, "death", got.Message.Type)
 }

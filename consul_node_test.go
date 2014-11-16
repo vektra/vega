@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestConsulNodeConfigDefaults(t *testing.T) {
@@ -77,9 +78,7 @@ func TestConsulNode(t *testing.T) {
 
 	debugf("pushing...\n")
 	err = cn2.Push("a", msg)
-	if err != nil {
-		panic(err)
-	}
+	require.NoError(t, err)
 
 	debugf("polling...\n")
 	got, err := cn1.Poll("a")
@@ -147,4 +146,70 @@ func TestConsulNodeRedeclaresOnStart(t *testing.T) {
 
 	err = cl.Push("a", msg)
 	assert.NoError(t, err, "routes were not readded")
+}
+
+func TestConsulNodePubSubBetweenNodes(t *testing.T) {
+	dir, err := ioutil.TempDir("", "mailbox")
+	if err != nil {
+		panic(err)
+	}
+
+	defer os.RemoveAll(dir)
+
+	cn1, err := NewConsulClusterNode(
+		&ConsulNodeConfig{
+			AdvertiseAddr: "127.0.0.1",
+			ListenPort:    8899,
+			DataPath:      dir})
+
+	if err != nil {
+		panic(err)
+	}
+
+	defer cn1.Close()
+	go cn1.Accept()
+
+	dir2, err := ioutil.TempDir("", "mailbox")
+	if err != nil {
+		panic(err)
+	}
+
+	defer os.RemoveAll(dir2)
+
+	cn2, err := NewConsulClusterNode(
+		&ConsulNodeConfig{
+			AdvertiseAddr: "127.0.0.1",
+			ListenPort:    9900,
+			DataPath:      dir2})
+
+	if err != nil {
+		panic(err)
+	}
+
+	defer cn2.Close()
+	go cn2.Accept()
+
+	cn1.Declare("a")
+
+	err = cn1.Push(":subscribe", &Message{ReplyTo: "a", CorrelationId: "foo"})
+	require.NoError(t, err)
+
+	// propagation delay
+	time.Sleep(1000 * time.Millisecond)
+
+	msg := &Message{CorrelationId: "foo", Body: []byte("between nodes")}
+
+	err = cn2.Push(":publish", msg)
+	require.NoError(t, err)
+
+	debugf("polling\n")
+
+	ret, err := cn1.Poll("a")
+	if err != nil {
+		panic(err)
+	}
+
+	require.NotNil(t, ret)
+
+	assert.True(t, msg.Equal(ret.Message), "message did not route properly")
 }

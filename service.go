@@ -1,7 +1,6 @@
 package vega
 
 import (
-	"errors"
 	"io"
 	"net"
 	"strings"
@@ -10,6 +9,7 @@ import (
 
 	"github.com/hashicorp/yamux"
 	"github.com/ugorji/go/codec"
+	"github.com/vektra/errors"
 	"github.com/vektra/seconn"
 )
 
@@ -125,8 +125,42 @@ func eofish(err error) bool {
 	return false
 }
 
+type clientEphemeralInfo struct {
+	lwt *Message
+}
+
+type clientData struct {
+	parent     net.Conn
+	session    *yamux.Session
+	inflight   map[MessageId]*Delivery
+	ephemerals map[string]*clientEphemeralInfo
+	closed     bool
+	done       chan struct{}
+	lwt        *Message
+}
+
 func (s *Service) cleanupConn(c net.Conn, data *clientData) {
+	debugf("cleaning up conn to %s\n", c.RemoteAddr())
+
 	s.lock.Lock()
+	defer s.lock.Unlock()
+
+	if data.closed {
+		return
+	}
+
+	if data.lwt != nil {
+		debugf("injecting lwt to %s\n", data.lwt.ReplyTo)
+		name := data.lwt.ReplyTo
+		data.lwt.ReplyTo = ""
+		err := s.Registry.Push(name, data.lwt)
+
+		if !errors.Equal(err, ENoMailbox) {
+			debugf("lwt injection error: %s\n", err)
+		}
+	}
+
+	close(data.done)
 
 	if data.inflight != nil {
 		for _, del := range data.inflight {
@@ -136,21 +170,26 @@ func (s *Service) cleanupConn(c net.Conn, data *clientData) {
 		data.inflight = nil
 	}
 
-	for _, name := range data.ephemerals {
+	for name, info := range data.ephemerals {
 		s.Registry.Abandon(name)
-	}
+		if info.lwt != nil {
+			if info.lwt.ReplyTo == "" {
+				continue
+			}
 
-	data.ephemerals = nil
+			debugf("injecting ephemeral lwt to %s\n", info.lwt.ReplyTo)
+			name := info.lwt.ReplyTo
+			info.lwt.ReplyTo = ""
+			err := s.Registry.Push(name, info.lwt)
+			if !errors.Equal(err, ENoMailbox) {
+				debugf("lwt ephemeral injection error: %#v\n", err)
+			}
+		}
+	}
 
 	data.session.Close()
 
-	s.lock.Unlock()
-}
-
-type clientData struct {
-	session    *yamux.Session
-	inflight   map[MessageId]*Delivery
-	ephemerals []string
+	data.closed = true
 }
 
 type acceptStream struct {
@@ -174,7 +213,15 @@ func (s *Service) acceptMux(c net.Conn) {
 
 	acs := make(chan acceptStream, 1)
 
-	data := &clientData{session, make(map[MessageId]*Delivery), nil}
+	debugf("new session for %s\n", c.RemoteAddr())
+
+	data := &clientData{
+		parent:     c,
+		session:    session,
+		inflight:   make(map[MessageId]*Delivery),
+		ephemerals: make(map[string]*clientEphemeralInfo),
+		done:       make(chan struct{}),
+	}
 
 	for {
 		go func() {
@@ -244,7 +291,7 @@ func (s *Service) handle(parent, c net.Conn, data *clientData) {
 				return
 			}
 
-			err = s.handleAbandon(c, msg)
+			err = s.handleAbandon(c, msg, data)
 		case PollType:
 			msg := &Poll{}
 			dec := codec.NewDecoder(c, &msgpack)
@@ -282,7 +329,7 @@ func (s *Service) handle(parent, c net.Conn, data *clientData) {
 				panic(err)
 			}
 
-			err = s.handlePush(c, msg)
+			err = s.handlePush(c, msg, data)
 		case CloseType:
 			err = s.handleClose(c, parent, data)
 		case StatsType:
@@ -353,7 +400,7 @@ func (s *Service) handleEphemeralDeclare(
 
 	s.lock.Lock()
 
-	data.ephemerals = append(data.ephemerals, msg.Name)
+	data.ephemerals[msg.Name] = &clientEphemeralInfo{}
 
 	s.lock.Unlock()
 
@@ -361,10 +408,22 @@ func (s *Service) handleEphemeralDeclare(
 	return err
 }
 
-func (s *Service) handleAbandon(c net.Conn, msg *Abandon) error {
+func (s *Service) handleAbandon(c net.Conn, msg *Abandon, data *clientData) error {
 	err := s.Registry.Abandon(msg.Name)
 	if err != nil {
 		return err
+	}
+
+	if info, ok := data.ephemerals[msg.Name]; ok {
+		if info.lwt != nil {
+			debugf("injecting ephemeral lwt 2 to %s\n", info.lwt.ReplyTo)
+			name := info.lwt.ReplyTo
+			info.lwt.ReplyTo = ""
+			err := s.Registry.Push(name, info.lwt)
+			if !errors.Equal(err, ENoMailbox) {
+				debugf("lwt ephemeral injection 2 error: %#v\n", err)
+			}
+		}
 	}
 
 	_, err = c.Write([]byte{uint8(SuccessType)})
@@ -374,14 +433,18 @@ func (s *Service) handleAbandon(c net.Conn, msg *Abandon) error {
 func (s *Service) handlePoll(c net.Conn, msg *Poll, data *clientData) error {
 	var ret PollResult
 
-	val, err := s.Registry.Poll(msg.Name)
-	if err != nil {
-		return err
-	}
+	if msg.Name == ":lwt" {
+		ret.Message = data.lwt
+	} else {
+		val, err := s.Registry.Poll(msg.Name)
+		if err != nil {
+			return err
+		}
 
-	if val != nil {
-		data.inflight[val.Message.MessageId] = val
-		ret.Message = val.Message
+		if val != nil {
+			data.inflight[val.Message.MessageId] = val
+			ret.Message = val.Message
+		}
 	}
 
 	c.Write([]byte{uint8(PollResultType)})
@@ -392,21 +455,26 @@ func (s *Service) handlePoll(c net.Conn, msg *Poll, data *clientData) error {
 func (s *Service) handleLongPoll(c net.Conn, msg *LongPoll, data *clientData) error {
 	debugf("handleLongPoll for %#v\n", s.Registry)
 
-	dur, err := time.ParseDuration(msg.Duration)
-	if err != nil {
-		return err
-	}
-
 	var ret PollResult
 
-	val, err := s.Registry.LongPoll(msg.Name, dur)
-	if err != nil {
-		return err
-	}
+	if msg.Name == ":lwt" {
+		ret.Message = data.lwt
+	} else {
+		dur, err := time.ParseDuration(msg.Duration)
+		if err != nil {
+			return err
+		}
 
-	if val != nil {
-		data.inflight[val.Message.MessageId] = val
-		ret.Message = val.Message
+		val, err := s.Registry.LongPollCancelable(msg.Name, dur, data.done)
+		if err != nil {
+			return err
+		}
+
+		if val != nil {
+			debugf("inflight for %s: %#v\n", data.parent.RemoteAddr(), data)
+			data.inflight[val.Message.MessageId] = val
+			ret.Message = val.Message
+		}
 	}
 
 	c.Write([]byte{uint8(PollResultType)})
@@ -414,17 +482,59 @@ func (s *Service) handleLongPoll(c net.Conn, msg *LongPoll, data *clientData) er
 	return enc.Encode(&ret)
 }
 
-func (s *Service) handlePush(c net.Conn, msg *Push) error {
-	debugf("%s: handlePush for %#v\n", s.Address, s.Registry)
+func (s *Service) setupLWT(msg *Message, data *clientData) error {
+	s.lock.Lock()
+	defer s.lock.Unlock()
 
-	err := s.Registry.Push(msg.Name, msg.Message)
-	if err != nil {
-		return err
+	if msg.CorrelationId == "" {
+		data.lwt = msg
+	} else {
+		info, ok := data.ephemerals[msg.CorrelationId]
+		if !ok {
+			return errors.Subject(ENoMailbox, msg.CorrelationId)
+		}
+
+		info.lwt = msg
 	}
 
-	debugf("%s: sending success\n", s.Address)
+	return nil
+}
 
-	_, err = c.Write([]byte{uint8(SuccessType)})
+var ErrUknownSystemMailbox = errors.New("unknown system mailbox")
+
+func (s *Service) handleInternal(c net.Conn, msg *Push, data *clientData) error {
+	var err error
+
+	switch msg.Name {
+	case ":lwt":
+		debugf("%s: setup LWT", s.Address)
+		err = s.setupLWT(msg.Message, data)
+	case ":publish", ":subscribe":
+		err = s.Registry.Push(msg.Name, msg.Message)
+	default:
+		err = errors.Subject(ErrUknownSystemMailbox, msg.Name)
+	}
+
+	return err
+}
+
+func (s *Service) handlePush(c net.Conn, msg *Push, data *clientData) error {
+	debugf("%s: handlePush for %#v\n", s.Address, s.Registry)
+	if msg.Name[0] == ':' {
+		err := s.handleInternal(c, msg, data)
+		if err != nil {
+			return err
+		}
+	} else {
+		err := s.Registry.Push(msg.Name, msg.Message)
+		if err != nil {
+			return err
+		}
+
+		debugf("%s: sending success\n", s.Address)
+	}
+
+	_, err := c.Write([]byte{uint8(SuccessType)})
 	return err
 }
 
@@ -488,10 +598,14 @@ type Client struct {
 	sess   *yamux.Session
 	addr   string
 	secure bool
+	lwt    *Message
 }
 
 func NewClient(addr string) (*Client, error) {
-	cl := &Client{nil, nil, addr, true}
+	cl := &Client{
+		addr:   addr,
+		secure: true,
+	}
 
 	cl.Session()
 
@@ -499,7 +613,7 @@ func NewClient(addr string) (*Client, error) {
 }
 
 func NewInsecureClient(addr string) (*Client, error) {
-	cl := &Client{nil, nil, addr, false}
+	cl := &Client{addr: addr}
 
 	cl.Session()
 
@@ -1012,6 +1126,86 @@ func (c *Client) LongPoll(name string, til time.Duration) (*Delivery, error) {
 	_, err = io.ReadFull(s, buf)
 	if err != nil {
 		return nil, c.checkError(err)
+	}
+
+	switch MessageType(buf[0]) {
+	case ErrorType:
+		var msgerr Error
+
+		err = codec.NewDecoder(s, &msgpack).Decode(&msgerr)
+		if err != nil {
+			return nil, c.checkError(err)
+		}
+
+		return nil, errors.New(msgerr.Error)
+	case PollResultType:
+		dec := codec.NewDecoder(s, &msgpack)
+
+		var res PollResult
+
+		if err := dec.Decode(&res); err != nil {
+			return nil, c.checkError(err)
+		}
+
+		if res.Message == nil {
+			return nil, nil
+		}
+
+		del := &Delivery{
+			Message: res.Message,
+			Ack:     func() error { return c.ack(res.Message.MessageId) },
+			Nack:    func() error { return c.nack(res.Message.MessageId) },
+		}
+
+		return del, nil
+	default:
+		return nil, c.checkError(EProtocolError)
+	}
+}
+
+func (c *Client) LongPollCancelable(name string, til time.Duration, done chan struct{}) (*Delivery, error) {
+	sess, err := c.Session()
+	if err != nil {
+		return nil, err
+	}
+
+	s, err := sess.Open()
+	if err != nil {
+		return nil, err
+	}
+
+	defer s.Close()
+
+	_, err = s.Write([]byte{uint8(LongPollType)})
+	if err != nil {
+		return nil, c.checkError(err)
+	}
+
+	enc := codec.NewEncoder(s, &msgpack)
+
+	msg := LongPoll{
+		Name:     name,
+		Duration: til.String(),
+	}
+
+	if err := enc.Encode(&msg); err != nil {
+		return nil, c.checkError(err)
+	}
+
+	delivered := make(chan struct{})
+
+	buf := []byte{0}
+
+	go func() {
+		_, err = io.ReadFull(s, buf)
+		close(delivered)
+	}()
+
+	select {
+	case <-done:
+		return nil, nil
+	case <-delivered:
+		// do the rest
 	}
 
 	switch MessageType(buf[0]) {

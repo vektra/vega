@@ -34,7 +34,7 @@ type PipeConn struct {
 	readDeadline time.Time
 }
 
-func (p *PipeConn) ComputeSharedKey() {
+func (p *PipeConn) initialize() error {
 	key := make([]byte, aes.BlockSize)
 
 	s1 := sha256.Sum256([]byte(p.ownM))
@@ -43,6 +43,19 @@ func (p *PipeConn) ComputeSharedKey() {
 	XORBytes(key, s1[:aes.BlockSize], s2[:aes.BlockSize])
 
 	p.sharedKey = key
+
+	msg := &Message{
+		ReplyTo:       p.pairM,
+		Type:          "pipe/close",
+		CorrelationId: p.ownM,
+	}
+
+	err := p.fc.Push(":lwt", msg)
+	if err != nil {
+		return err
+	}
+
+	return nil
 }
 
 func (p *PipeConn) Close() error {
@@ -330,6 +343,8 @@ func (fc *FeatureClient) ListenPipe(name string) (*PipeConn, error) {
 			return nil, EProtocolError
 		}
 
+		debugf("successful pipe start from %s", resp.Message.ReplyTo)
+
 		ownM := RandomQueue()
 		fc.EphemeralDeclare(ownM)
 
@@ -350,7 +365,13 @@ func (fc *FeatureClient) ListenPipe(name string) (*PipeConn, error) {
 			ownM:  ownM,
 		}
 
-		pc.ComputeSharedKey()
+		err = pc.initialize()
+		if err != nil {
+			fc.Abandon(ownM)
+			return nil, err
+		}
+
+		debugf("pipe created at %s", ownM)
 
 		return pc, nil
 	}
@@ -374,6 +395,7 @@ func (fc *FeatureClient) ConnectPipe(name string) (*PipeConn, error) {
 	}
 
 	for {
+		debugf("waiting on %s for handshake", ownM)
 		resp, err := fc.LongPoll(ownM, 1*time.Minute)
 		if err != nil {
 			return nil, err
@@ -399,7 +421,11 @@ func (fc *FeatureClient) ConnectPipe(name string) (*PipeConn, error) {
 			ownM:  ownM,
 		}
 
-		pc.ComputeSharedKey()
+		err = pc.initialize()
+		if err != nil {
+			fc.Abandon(ownM)
+			return nil, err
+		}
 
 		return pc, nil
 	}
