@@ -61,16 +61,16 @@ func main() {
 		go local.AcceptInsecure()
 	}
 
-	fmt.Printf("Booted vegad:\n")
-	fmt.Printf("    LocalPort: %d\n", *fPort)
-	fmt.Printf("  ClusterPort: %d\n", cfg.ListenPort)
-	fmt.Printf("     DataPath: %s\n", cfg.DataPath)
-	fmt.Printf("  AdvertiseId: %s\n", cfg.AdvertiseID())
+	fmt.Printf("! Booted vegad:\n")
+	fmt.Printf("* LocalPort: %d\n", *fPort)
+	fmt.Printf("* ClusterPort: %d\n", cfg.ListenPort)
+	fmt.Printf("* DataPath: %s\n", cfg.DataPath)
+	fmt.Printf("* AdvertiseId: %s\n", cfg.AdvertiseID())
 
 	if h == nil {
-		fmt.Printf("  HTTP Server disabled\n")
+		fmt.Printf("* HTTP Server disabled\n")
 	} else {
-		fmt.Printf("  HTTP Server: %d\n", *fHttpPort)
+		fmt.Printf("* HTTP Server: %d\n", *fHttpPort)
 	}
 
 	sig := make(chan os.Signal)
