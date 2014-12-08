@@ -5,7 +5,8 @@ Vega
 
 A distributed mailbox system for building distributed systems.
 
-Version: **0.3**
+* Version: **0.3**
+* [Announcement blog post](http://vektra.com/blog/vega)
 
 # Features
 
