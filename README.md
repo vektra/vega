@@ -13,7 +13,7 @@ A distributed mailbox system for building distributed systems.
 * Agents on each machine use routing to discover how to deliver to mailboxes
   * Consul provides a consistent, distributed routing table
 * Native Go API
-* [Simple HTTP interface](https://github.com/vektra/vega/blob/master/HTTP_API.md)
+* [Simple HTTP interface](https://github.com/vektra/vega/blob/master/doc/HTTP_API.md)
 
 ## Eventual Features
 
@@ -44,7 +44,7 @@ Perhaps you've heard of this idea, it's pretty cool. Once a team decides they
 want to exchange messages between components, they have to figure out now
 how to do that.
 
-Also check out our [Mailbox vs Queue thoughts](https://github.com/vektra/vega/blob/master/MAILBOX_VS_QUEUE.md)
+Also check out our [Mailbox vs Queue thoughts](https://github.com/vektra/vega/blob/master/doc/MAILBOX_VS_QUEUE.md)
 
 ## Queue Brokers
 
