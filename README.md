@@ -1,3 +1,5 @@
+<img align="right" src="https://github.com/vektra/vega/blob/master/doc/penrose.png">
+
 Vega
 =======
 
