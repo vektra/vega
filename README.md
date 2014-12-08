@@ -1,59 +1,7 @@
 Vega
 =======
 
-A distributed mailbox system
-
-
-## What is a distributed mailbox system?
-
-It's common when building a distributed system (any distributed system) that
-components running on different machines need to talk to eachother. A common
-way to model that communication is via passing messages between the components.
-Perhaps you've heard of this idea, it's pretty cool. Once a team decides they
-want to exchange messages between components, they have to figure out now
-how to do that.
-
-### Queue Brokers
-
-A common approach is to use a central service that all components talk to.
-This service typically provides named queues which components put messages
-into and pull them out from. This central service acts as an arbitrator
-for all the queues.
-
-A centralize service that all components talk to means that the reliability
-of your whole system is now the reliability of this single, central service.
-It's typically for these queue brokers to be difficult to configure in a way
-that provides high avaliability as well, only making it more difficult
-for users to have confidence in this very important service.
-
-### Brokerless Queues
-
-Another approach is to use software within each component to that allows
-the components to talk directly to eachother. This means there is no central
-broker that the reliability is pinned on, which is great.
-
-A common issue with this approach is that each component is now significantly
-more complicated. Each component has to keep track of all other components
-that are interested in it's messages. A bigger issue is how the availability
-of a component affect the availability of it's messages. If a component crashes
-or needs to restart, it could lose any messages it hadn't fully sent out as well
-any component that wants to talk to it might timeout sending while the component
-is unavailable. All those problems can be solved, they just add complexity to
-a component. For some applications, thats a problem worth solving, but for many
-it's not.
-
-### Distributed Mailbox
-
-Vega attempts to reconcil these varies needs by providing a system with the following characteristics:
-
-* Named mailboxes that messages and push and pulled from
-* Each machine runs their own broker
-* Components talk to the broker on their machine only
-* Brokers use a distributed routing table (provided by Consul only right now) to pass messages between machines
-
-This means that they differ heavily from a centralized queue system in that 2 
-different components can not share a mailbox.  Thus a Vega mailbox
-can not be used as a work queue.
+A distributed mailbox system for building distributed systems.
 
 # Features
 
@@ -65,9 +13,9 @@ can not be used as a work queue.
 * Agents on each machine use routing to discover how to deliver to mailboxes
   * Consul provides a consistent, distributed routing table
 * Native Go API
-* Simple HTTP interface
+* [Simple HTTP interface](https://github.com/vektra/vega/blob/master/HTTP_API.md)
 
-# Eventual Features
+## Eventual Features
 
 * AMQP API support
 * STOMP API support
@@ -85,5 +33,59 @@ a ultra fast message system is needed, you want different guarantees on messages
 For instance, you're ok losing messages at the expense of continuning to run
 quickly. Reliable and resilent is the focus because those are the aspects of a
 backbone communication system that are most important.
+
+
+# What is a distributed mailbox system?
+
+It's common when building a distributed system (any distributed system) that
+components running on different machines need to talk to eachother. A common
+way to model that communication is via passing messages between the components.
+Perhaps you've heard of this idea, it's pretty cool. Once a team decides they
+want to exchange messages between components, they have to figure out now
+how to do that.
+
+Also check out our [Mailbox vs Queue thoughts](https://github.com/vektra/vega/blob/master/MAILBOX_VS_QUEUE.md)
+
+## Queue Brokers
+
+A common approach is to use a central service that all components talk to.
+This service typically provides named queues which components put messages
+into and pull them out from. This central service acts as an arbitrator
+for all the queues.
+
+A centralize service that all components talk to means that the reliability
+of your whole system is now the reliability of this single, central service.
+It's typically for these queue brokers to be difficult to configure in a way
+that provides high avaliability as well, only making it more difficult
+for users to have confidence in this very important service.
+
+## Brokerless Queues
+
+Another approach is to use software within each component to that allows
+the components to talk directly to eachother. This means there is no central
+broker that the reliability is pinned on, which is great.
+
+A common issue with this approach is that each component is now significantly
+more complicated. Each component has to keep track of all other components
+that are interested in it's messages. A bigger issue is how the availability
+of a component affect the availability of it's messages. If a component crashes
+or needs to restart, it could lose any messages it hadn't fully sent out as well
+any component that wants to talk to it might timeout sending while the component
+is unavailable. All those problems can be solved, they just add complexity to
+a component. For some applications, thats a problem worth solving, but for many
+it's not.
+
+## Distributed Mailbox
+
+Vega attempts to reconcil these varies needs by providing a system with the following characteristics:
+
+* Named mailboxes that messages and push and pulled from
+* Each machine runs their own broker
+* Components talk to the broker on their machine only
+* Brokers use a distributed routing table (provided by Consul only right now) to pass messages between machines
+
+This means that they differ heavily from a centralized queue system in that 2 
+different components can not share a mailbox.  Thus a Vega mailbox
+can not be used as a work queue directly (though it could be used to build one).
 
 
