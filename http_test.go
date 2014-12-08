@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -124,6 +125,37 @@ func TestHTTPPushMailboxMsgPack(t *testing.T) {
 	}
 
 	assert.True(t, msg.Equal(del.Message), "message not pushed")
+}
+
+func TestHTTPPushMailboxURLEncoded(t *testing.T) {
+	reg := NewMemRegistry()
+	serv := NewHTTPService(cPort, reg)
+
+	reg.Declare("a")
+
+	body := strings.NewReader("body=hello")
+
+	url := fmt.Sprintf("http://%s/mailbox/a", cPort)
+
+	req, err := http.NewRequest("PUT", url, body)
+	if err != nil {
+		panic(err)
+	}
+
+	req.Header.Set("Content-Type", ctUrlEncoded)
+
+	rw := httptest.NewRecorder()
+
+	serv.mux.ServeHTTP(rw, req)
+
+	assert.Equal(t, 200, rw.Code, "server error")
+
+	del, err := reg.Poll("a")
+	if err != nil {
+		panic(err)
+	}
+
+	assert.Equal(t, []byte("hello"), del.Message.Body)
 }
 
 func TestHTTPPollMailbox(t *testing.T) {

@@ -2,9 +2,9 @@ package vega
 
 import (
 	"encoding/json"
-	"io/ioutil"
 	"net"
 	"net/http"
+	"strconv"
 	"sync"
 	"time"
 
@@ -207,12 +207,23 @@ func (h *HTTPService) push(rw http.ResponseWriter, req *http.Request) {
 	case ctMsgPack:
 		err = codec.NewDecoder(req.Body, &msgpack).Decode(&msg)
 	case ctUrlEncoded:
-		data, le := ioutil.ReadAll(req.Body)
-		if le != nil {
-			err = le
-		} else {
-			msg.Body = data
+		msg.ContentType = req.FormValue("content_type")
+		msg.ContentEncoding = req.FormValue("content_encoding")
+		if prio := req.FormValue("priority"); prio != "" {
+			if i, err := strconv.Atoi(prio); err == nil {
+				msg.Priority = uint8(i)
+			}
 		}
+
+		msg.CorrelationId = req.FormValue("correlation_id")
+		msg.ReplyTo = req.FormValue("reply_to")
+		n := time.Now()
+		msg.Timestamp = &n
+		msg.Type = req.FormValue("type")
+		msg.UserId = req.FormValue("user_id")
+		msg.AppId = req.FormValue("app_id")
+
+		msg.Body = []byte(req.FormValue("body"))
 	default:
 		err = json.NewDecoder(req.Body).Decode(&msg)
 	}
