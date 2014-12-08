@@ -7,7 +7,7 @@ import (
 	"os"
 	"os/signal"
 
-	vega "./.."
+	"github.com/vektra/vega"
 )
 
 var fPort = flag.Int("port", vega.DefaultPort, "port to listen on localhost")
