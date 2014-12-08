@@ -42,7 +42,7 @@ A distributed mailbox system for building distributed systems.
 
 # Focus
 
-The focus of Vega is to provide a resilent, trustworthy message delivery system.
+The focus of Vega is to provide a resilient, trustworthy message delivery system.
 
 Within an organization, it would form the backbone for how components communicate
 with each other.
@@ -51,7 +51,7 @@ At present, the focus is not on providing an ultra fast message passing system.
 There are many projects that look to provide this and generally when 
 an ultra fast message system is needed, you want different guarantees on messages.
 For instance, you're ok losing messages at the expense of continuning to run
-quickly. Reliable and resilent is the focus because those are the aspects of a
+quickly. Reliable and resilient is the focus because those are the aspects of a
 backbone communication system that are most important.
 
 
@@ -105,7 +105,7 @@ Vega attempts to reconcile these various needs by providing a system with the fo
 * Brokers use a distributed routing table (provided by Consul only right now) to pass messages between machines
 
 This means that they differ heavily from a centralized queue system in that 2 
-different components can not share a mailbox.  Thus a Vega mailbox
+different components can not share a mailbox. Thus a Vega mailbox
 can not be used as a work queue directly (though it could be used to build one).
 
 
