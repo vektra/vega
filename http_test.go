@@ -33,7 +33,7 @@ func TestHTTPDeclareMailbox(t *testing.T) {
 	assert.Equal(t, 200, rw.Code, "server error")
 
 	err = reg.Push("a", Msg("hello"))
-	assert.NoError(t, err, "queue was not created")
+	assert.NoError(t, err, "mailbox was not created")
 }
 
 func TestHTTPAbandonMailbox(t *testing.T) {

@@ -58,8 +58,8 @@ func HandlerFunc(h func(*Message) *Message) Handler {
 type FeatureClient struct {
 	*Client
 
-	localQueue string
-	lock       sync.Mutex
+	localMailbox string
+	lock         sync.Mutex
 }
 
 // Create a new FeatureClient that wraps the same Client as
@@ -69,23 +69,23 @@ func (fc *FeatureClient) Clone() *FeatureClient {
 	return &FeatureClient{Client: fc.Client}
 }
 
-// Return the name of a ephemeral queue only for this instance
-func (fc *FeatureClient) LocalQueue() string {
+// Return the name of a ephemeral mailbox only for this instance
+func (fc *FeatureClient) LocalMailbox() string {
 	fc.lock.Lock()
 	defer fc.lock.Unlock()
 
-	if fc.localQueue != "" {
-		return fc.localQueue
+	if fc.localMailbox != "" {
+		return fc.localMailbox
 	}
 
-	r := RandomQueue()
+	r := RandomMailbox()
 
 	err := fc.EphemeralDeclare(r)
 	if err != nil {
 		panic(err)
 	}
 
-	fc.localQueue = r
+	fc.localMailbox = r
 
 	return r
 }
@@ -122,7 +122,7 @@ func (fc *FeatureClient) HandleRequests(name string, h Handler) error {
 }
 
 func (fc *FeatureClient) Request(name string, msg *Message) (*Delivery, error) {
-	msg.ReplyTo = fc.LocalQueue()
+	msg.ReplyTo = fc.LocalMailbox()
 
 	err := fc.Push(name, msg)
 	if err != nil {

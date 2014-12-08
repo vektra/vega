@@ -257,7 +257,7 @@ func TestDiskMailboxKeepsStatus(t *testing.T) {
 		panic(err)
 	}
 
-	assert.Nil(t, v, "there shouldn't be anything in queue")
+	assert.Nil(t, v, "there shouldn't be anything in mailbox")
 
 	msg := Msg([]byte("hello"))
 
@@ -271,7 +271,7 @@ func TestDiskMailboxKeepsStatus(t *testing.T) {
 	}
 
 	if v != nil {
-		t.Fatal("there shouldn't be anything in the queue")
+		t.Fatal("there shouldn't be anything in the mailbox")
 	}
 
 	msg2 := Msg([]byte("message 2"))
@@ -287,7 +287,7 @@ func TestDiskMailboxKeepsStatus(t *testing.T) {
 	assert.True(t, msg3.Equal(ret), "unable to pull correct message")
 
 	ret, _ = m.Poll()
-	assert.Nil(t, ret, "queue should be empty")
+	assert.Nil(t, ret, "mailbox should be empty")
 }
 
 func TestDiskMailboxStats(t *testing.T) {
@@ -308,7 +308,7 @@ func TestDiskMailboxStats(t *testing.T) {
 	m := r.Mailbox("a")
 
 	if m.Stats().Size != 0 {
-		t.Fatal("there shouldn't be anything in queue")
+		t.Fatal("there shouldn't be anything in mailbox")
 	}
 
 	msg := Msg([]byte("hello"))

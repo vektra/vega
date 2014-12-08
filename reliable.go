@@ -3,7 +3,7 @@ package vega
 import "sync"
 
 type reliableMessage struct {
-	queue   string
+	mailbox string
 	message *Message
 }
 
@@ -29,7 +29,7 @@ func (rs *reliableStorage) Retry() error {
 	rs.bufferLock.Lock()
 
 	for idx, msg := range rs.buffer {
-		err := rs.Storage.Push(msg.queue, msg.message)
+		err := rs.Storage.Push(msg.mailbox, msg.message)
 		if err != nil {
 			if idx > 0 {
 				rs.buffer = rs.buffer[idx:]

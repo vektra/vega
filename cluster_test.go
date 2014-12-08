@@ -244,7 +244,7 @@ func TestClusterAbandon(t *testing.T) {
 	}
 
 	err = cn.Push("a", payload)
-	assert.Error(t, err, "queue was not abandoned")
+	assert.Error(t, err, "mailbox was not abandoned")
 }
 
 func TestClusterPubSub(t *testing.T) {

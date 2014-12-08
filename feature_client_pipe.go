@@ -345,7 +345,7 @@ func (fc *FeatureClient) ListenPipe(name string) (*PipeConn, error) {
 
 		debugf("successful pipe start from %s", resp.Message.ReplyTo)
 
-		ownM := RandomQueue()
+		ownM := RandomMailbox()
 		fc.EphemeralDeclare(ownM)
 
 		msg := Message{
@@ -378,7 +378,7 @@ func (fc *FeatureClient) ListenPipe(name string) (*PipeConn, error) {
 }
 
 func (fc *FeatureClient) ConnectPipe(name string) (*PipeConn, error) {
-	ownM := RandomQueue()
+	ownM := RandomMailbox()
 	fc.EphemeralDeclare(ownM)
 
 	msg := Message{

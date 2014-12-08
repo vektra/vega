@@ -151,7 +151,7 @@ func generateUUIDSecure() string {
 		uuid[10:16])
 }
 
-func RandomQueue() string {
+func RandomMailbox() string {
 	return "gen-" + generateUUID()
 }
 

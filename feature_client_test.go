@@ -32,7 +32,7 @@ func TestFeatureClientAutoEphemeralDeclare(t *testing.T) {
 	msg := Msg([]byte("hello"))
 
 	err = fc.Push(name, msg)
-	assert.NoError(t, err, "queue was not declared")
+	assert.NoError(t, err, "mailbox was not declared")
 
 	fc.Close()
 
@@ -42,7 +42,7 @@ func TestFeatureClientAutoEphemeralDeclare(t *testing.T) {
 	}
 
 	err = fc.Push(name, msg)
-	assert.NotNil(t, err, "queue was not ephemeral")
+	assert.NotNil(t, err, "mailbox was not ephemeral")
 }
 
 func TestFeatureClientReceiveChannel(t *testing.T) {
