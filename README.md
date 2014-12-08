@@ -3,6 +3,8 @@ Vega
 
 A distributed mailbox system for building distributed systems.
 
+Version: **0.3**
+
 # Features
 
 * Distributed by default operations
@@ -19,6 +21,21 @@ A distributed mailbox system for building distributed systems.
 
 * AMQP API support
 * STOMP API support
+
+# Installation
+
+## Linux
+
+* [i386](https://bintray.com/artifact/download/evanphx/vega/vega-0.3-linux-386.zip)
+* [amd64](https://bintray.com/artifact/download/evanphx/vega/vega-0.3-linux-amd64.zip)
+
+## Darwin
+
+* [amd64](https://bintray.com/artifact/download/evanphx/vega/vega-0.3-darwin-amd64.zip)
+
+## Via Go
+
+* `go get github.com/vektra/vega/cmd/vegad`
 
 # Focus
 
