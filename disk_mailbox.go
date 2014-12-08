@@ -18,9 +18,11 @@ type diskStorage struct {
 	lock sync.Mutex
 }
 
+const LRUCacheSize = 100 * 1048576
+
 func NewDiskStorage(path string) (*diskStorage, error) {
 	opts := levigo.NewOptions()
-	opts.SetCache(levigo.NewLRUCache(3 << 30))
+	opts.SetCache(levigo.NewLRUCache(LRUCacheSize))
 	opts.SetCreateIfMissing(true)
 
 	db, err := levigo.Open(path, opts)
