@@ -80,7 +80,7 @@ for users to have confidence in this very important service.
 
 ## Brokerless Queues
 
-Another approach is to use software within each component to that allows
+Another approach is to use software within each component that allows
 the components to talk directly to eachother. This means there is no central
 broker that the reliability is pinned on, which is great.
 
@@ -96,9 +96,9 @@ it's not.
 
 ## Distributed Mailbox
 
-Vega attempts to reconcil these varies needs by providing a system with the following characteristics:
+Vega attempts to reconcil these various needs by providing a system with the following characteristics:
 
-* Named mailboxes that messages and push and pulled from
+* Named mailboxes that messages are pushed and pulled from
 * Each machine runs their own broker
 * Components talk to the broker on their machine only
 * Brokers use a distributed routing table (provided by Consul only right now) to pass messages between machines
