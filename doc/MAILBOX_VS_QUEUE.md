@@ -1,15 +1,15 @@
 In the world of messaging, most people think about queues. It is the most common
 model implemented because it represents a commonly understood way of considering
-a shared resource: any one can put things in and once someone taks something out,
+a shared resource: any one can put things in and once someone takes something out,
 it's gone.
 
 The important aspect of this thinking is the shared resource. A big point of
-emphasis around messaging passing architectures it disconnecting the sender
+emphasis around messaging passing architectures is disconnecting the sender
 and the receiver. The queue represents the middle-man: taking from the sender
 as fast as it can, and giving out to the receiver (or receivers) as they request
 messages.
 
-The true aim of messaging passing is provide an asyncronious layer between the
+The true aim of messaging passing is to provide an asyncronious layer between the
 sender and the receiver. Code that sends a request and then blocks, waiting for
 a response, is less resiliant to errors created by networks. Additionally,
 stateful request/response connections lend themselves to implicit context.
@@ -35,7 +35,7 @@ mailboxes, both systems provide the ability to decouple the sending
 code from the receiving code. Queue systems go an extra level and provide
 ingrained ability to have many receivers of a single queue where each
 message in the queue is only given out to a single receiver. This is commonly
-known as a "work queue" and is quite valuable. Many problems in can
+known as a "work queue" and is quite valuable. Many problems can
 be tackled easily by using a work queue and they make it very easy to add
 additional capacity.
 
@@ -50,8 +50,8 @@ may model it's semantics to allow a mailbox to be used as a work queue,
 but that mailbox model is flexible enough that this is not a requirement
 (nor is it a typical expectation of users).
 
-Given this increased flexibility, a mailbox system can archieve better
-distributed semantics that a queue system because there is no requirement
+Given this increased flexibility, a mailbox system can achieve better
+distributed semantics than a queue system because there is no requirement
 of linearization into a named queue. A distributed mailbox system need
 only provide a way to map a mailbox name to a node to provide availability.
 This means that it's possible to run a mailbox daemon on each node, with
