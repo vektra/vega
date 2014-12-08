@@ -6,19 +6,19 @@ agent.
 ## Operations
 
 * POST /mailbox/:name
-  * Declare (ie create if not exists) a mailbox. All mailboxes must be declared before they can be used
+  * Declare (i.e. create if does not exist) a mailbox. All mailboxes must be declared before they can be used.
 * DELETE /mailbox/:name
   * Abandon a mailbox. Only mailboxes on the local agent may be abondoned.
 * PUT /mailbox/:name
   * Add a new message to a mailbox. The mailbox may be remote, in which case the agent will route it to the proper agent.
   * Passing `application/x-msgpack` in the `Content-Type` header tells the server to decode the message as MessagePack format. `Content-Type` defaults to JSON.
 * GET /mailbox/:name
-  * Pull a message out of a mailbox. The mailbox must be a locally declared mailbox as Vega does not allow readng a mailbox on another agent.
+  * Pull a message out of a mailbox. The mailbox must be a locally declared mailbox as Vega does not allow reading a mailbox on another agent.
   * Use the `wait` parameter to use a long poll request. The value is how long the query will potentially block for. Examples are "10s" for 10 seconds and "5m" for 5 minutes. If there is no message within the time limit, a 204 is returned.
   * Passing a `lease` parameter will set a lease on the message. See below for information on message leases.
   * Passing `application/x-msgpack` in the `Accept` header will result in the body being in MessagePack format rather than JSON.
 * DELETE /message/:id
-  * Acknowledge a message previous pulled from a mailbox. This or PUT must be done to all messages in order for Vega to know the message has been handled.
+  * Acknowledge a message previously pulled from a mailbox. This or PUT must be done to all messages in order for Vega to know the message has been handled.
 * PUT /messages/:id
   * Indicate that the message should be returned to it's mailbox because the component could not handle it.
 
@@ -27,7 +27,7 @@ agent.
 PUTing a message into a mailbox supports 3 different formats the message may
 be in: JSON, MessagePack, or URLencoded. For JSON and MessagePack, the format of a message is:
 
-```
+```js
 {
   "headers": {},                // Any user specific headers
   "content_type": "foo/bar",    // MIME content type
@@ -70,5 +70,5 @@ because the system assumes the client crashed and the message was not handled.
 
 The default lease is 5 minutes. The format is the same as `wait`, for example `10s`
 for 10 seconds. The default value is very conservative to allow HTTP clients
-a lot of leighway. Clients should generally set it to value that makes sense
+a lot of leeway. Clients should generally set it to value that makes sense
 for their usage.
