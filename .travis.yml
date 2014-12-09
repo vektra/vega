@@ -13,5 +13,6 @@ before_install:
   - cd leveldb-1.15.0 && make && sudo cp -a include/* /usr/include/ && sudo cp -a lib* /usr/lib/
 
 script:
+    - pwd
     - make travis
 
