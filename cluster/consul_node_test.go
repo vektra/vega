@@ -167,6 +167,8 @@ func TestConsulNodePubSubBetweenNodes(t *testing.T) {
 		panic(err)
 	}
 
+	defer cn1.Cleanup()
+
 	defer cn1.Close()
 	go cn1.Accept()
 
@@ -186,6 +188,8 @@ func TestConsulNodePubSubBetweenNodes(t *testing.T) {
 	if err != nil {
 		panic(err)
 	}
+
+	defer cn2.Cleanup()
 
 	defer cn2.Close()
 	go cn2.Accept()
