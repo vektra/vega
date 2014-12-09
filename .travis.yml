@@ -1,12 +1,11 @@
 language: go
-
 go:
-    - 1.2
-    - 1.3
-
+- 1.2
+- 1.3
 before_install:
-  - make deps
-
+- make deps
 script:
-    - make travis
-
+- make travis
+notifications:
+  slack:
+    secure: VKMkzHCNCl9dyYwjemw7+4Lka66XXz+IpQezaLGA8+xQZA9GM56Z+hrUT7RCnjpklE1JRNjOgFnNhJK31Sivx4ls5YKKfQ5gU62tK/o3H7lTT5IcMXp07fJw42wbN2bA1m1DaOMI1732uZw9kae5w0mgn4iY74qnP+P3JyTApA0=
