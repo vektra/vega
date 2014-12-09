@@ -1,18 +1,20 @@
-package vega
+package disk
 
 import (
 	"errors"
 	"strconv"
-	"strings"
 	"sync"
 
 	"github.com/jmhodges/levigo"
 	"github.com/ugorji/go/codec"
+	"github.com/vektra/vega"
 )
+
+var msgpack codec.MsgpackHandle
 
 var ECorruptMailbox = errors.New("corrupt mailbox metadata")
 
-type diskStorage struct {
+type Storage struct {
 	db *levigo.DB
 
 	lock sync.Mutex
@@ -20,7 +22,7 @@ type diskStorage struct {
 
 const LRUCacheSize = 100 * 1048576
 
-func NewDiskStorage(path string) (*diskStorage, error) {
+func NewDiskStorage(path string) (*Storage, error) {
 	opts := levigo.NewOptions()
 	opts.SetCache(levigo.NewLRUCache(LRUCacheSize))
 	opts.SetCreateIfMissing(true)
@@ -30,18 +32,23 @@ func NewDiskStorage(path string) (*diskStorage, error) {
 		return nil, err
 	}
 
-	return &diskStorage{db: db}, nil
+	return &Storage{db: db}, nil
 }
 
-func (d *diskStorage) Close() error {
+func (d *Storage) Close() error {
 	d.db.Close()
 	return nil
+}
+
+type watchChannel struct {
+	indicator chan *vega.Message
+	done      chan struct{}
 }
 
 type diskMailbox struct {
 	sync.Mutex
 
-	disk     *diskStorage
+	disk     *Storage
 	prefix   []byte
 	watchers []*watchChannel
 }
@@ -60,7 +67,7 @@ func diskDataUnmarshal(data []byte, v interface{}) error {
 	return codec.NewDecoderBytes(data, &msgpack).Decode(v)
 }
 
-func (d *diskStorage) Mailbox(name string) Mailbox {
+func (d *Storage) Mailbox(name string) vega.Mailbox {
 	d.lock.Lock()
 	defer d.lock.Unlock()
 
@@ -107,7 +114,7 @@ func (d *diskStorage) Mailbox(name string) Mailbox {
 	}
 }
 
-func (d *diskStorage) MailboxNames() []string {
+func (d *Storage) MailboxNames() []string {
 	d.lock.Lock()
 	defer d.lock.Unlock()
 
@@ -190,7 +197,7 @@ func (m *diskMailbox) Abandon() error {
 	return nil
 }
 
-func (m *diskMailbox) Poll() (*Message, error) {
+func (m *diskMailbox) Poll() (*vega.Message, error) {
 	m.Lock()
 	defer m.Unlock()
 
@@ -250,23 +257,10 @@ func (m *diskMailbox) Poll() (*Message, error) {
 		return nil, err
 	}
 
-	return DecodeMessage(data), nil
+	return vega.DecodeMessage(data), nil
 }
 
-func (id MessageId) LocalIndex() string {
-	colonPos := strings.LastIndex(string(id), ":")
-	if colonPos == -1 {
-		return ""
-	}
-
-	return string(id[colonPos+1:])
-}
-
-func (id MessageId) AppendLocalIndex(idxStr string) MessageId {
-	return id + ":" + MessageId(idxStr)
-}
-
-func (m *diskMailbox) Ack(id MessageId) error {
+func (m *diskMailbox) Ack(id vega.MessageId) error {
 	m.Lock()
 	defer m.Unlock()
 
@@ -276,11 +270,11 @@ func (m *diskMailbox) Ack(id MessageId) error {
 
 	data, err := db.Get(ro, m.prefix)
 	if err != nil {
-		return EUnknownMessage
+		return vega.EUnknownMessage
 	}
 
 	if len(data) == 0 {
-		return EUnknownMessage
+		return vega.EUnknownMessage
 	}
 
 	var header mailboxHeader
@@ -292,7 +286,7 @@ func (m *diskMailbox) Ack(id MessageId) error {
 
 	idxStr := id.LocalIndex()
 	if idxStr == "" {
-		return EUnknownMessage
+		return vega.EUnknownMessage
 	}
 
 	idx, err := strconv.Atoi(idxStr)
@@ -300,14 +294,14 @@ func (m *diskMailbox) Ack(id MessageId) error {
 		return err
 	}
 
-	debugf("acking message %d (AckIndex: %d)\n", idx, header.AckIndex)
+	// debugf("acking message %d (AckIndex: %d)\n", idx, header.AckIndex)
 
 	if header.ReadIndex-header.AckIndex == 0 {
-		return EUnknownMessage
+		return vega.EUnknownMessage
 	}
 
 	if idx < header.AckIndex || idx >= header.ReadIndex {
-		return EUnknownMessage
+		return vega.EUnknownMessage
 	}
 
 	// Messages may be ack'd incontigiously. That's fine, we'll
@@ -342,13 +336,13 @@ func (m *diskMailbox) Ack(id MessageId) error {
 	return nil
 }
 
-func (m *diskMailbox) Nack(id MessageId) error {
+func (m *diskMailbox) Nack(id vega.MessageId) error {
 	m.Lock()
 	defer m.Unlock()
 
 	idxStr := id.LocalIndex()
 	if idxStr == "" {
-		return EUnknownMessage
+		return vega.EUnknownMessage
 	}
 
 	idx, err := strconv.Atoi(idxStr)
@@ -368,7 +362,7 @@ func (m *diskMailbox) Nack(id MessageId) error {
 	}
 
 	if idx < header.AckIndex || idx >= header.ReadIndex {
-		return EUnknownMessage
+		return vega.EUnknownMessage
 	}
 
 	header.InFlight--
@@ -397,7 +391,7 @@ func (m *diskMailbox) Nack(id MessageId) error {
 	return nil
 }
 
-func (m *diskMailbox) Push(value *Message) error {
+func (m *diskMailbox) Push(value *vega.Message) error {
 	m.Lock()
 	defer m.Unlock()
 
@@ -420,7 +414,7 @@ func (m *diskMailbox) Push(value *Message) error {
 	idxStr := strconv.Itoa(header.WriteIndex)
 
 	if value.MessageId == "" {
-		value.MessageId = NextMessageID()
+		value.MessageId = vega.NextMessageID()
 	}
 
 	value.MessageId = value.MessageId.AppendLocalIndex(idxStr)
@@ -479,29 +473,29 @@ RETRY:
 	return nil
 }
 
-func (mm *diskMailbox) AddWatcher() <-chan *Message {
+func (mm *diskMailbox) AddWatcher() <-chan *vega.Message {
 	mm.Lock()
 	defer mm.Unlock()
 
-	indicator := make(chan *Message, 1)
+	indicator := make(chan *vega.Message, 1)
 
 	mm.watchers = append(mm.watchers, &watchChannel{indicator, nil})
 
 	return indicator
 }
 
-func (mm *diskMailbox) AddWatcherCancelable(done chan struct{}) <-chan *Message {
+func (mm *diskMailbox) AddWatcherCancelable(done chan struct{}) <-chan *vega.Message {
 	mm.Lock()
 	defer mm.Unlock()
 
-	indicator := make(chan *Message, 1)
+	indicator := make(chan *vega.Message, 1)
 
 	mm.watchers = append(mm.watchers, &watchChannel{indicator, done})
 
 	return indicator
 }
 
-func (m *diskMailbox) Stats() *MailboxStats {
+func (m *diskMailbox) Stats() *vega.MailboxStats {
 	m.Lock()
 	defer m.Unlock()
 
@@ -516,7 +510,7 @@ func (m *diskMailbox) Stats() *MailboxStats {
 		diskDataUnmarshal(data, &header)
 	}
 
-	return &MailboxStats{
+	return &vega.MailboxStats{
 		Size:     header.Size + len(header.DCMessages),
 		InFlight: header.InFlight,
 	}

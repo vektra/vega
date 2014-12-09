@@ -8,24 +8,25 @@ import (
 	"os/signal"
 
 	"github.com/vektra/vega"
+	"github.com/vektra/vega/cluster"
 )
 
 var fPort = flag.Int("port", vega.DefaultPort, "port to listen on localhost")
-var fClusterPort = flag.Int("cluster-port", vega.DefaultClusterPort, "port to listen on for cluster membership")
+var fClusterPort = flag.Int("cluster-port", cluster.DefaultClusterPort, "port to listen on for cluster membership")
 var fHttpPort = flag.Int("http-port", vega.DefaultHTTPPort, "port to listen on")
-var fData = flag.String("data-dir", vega.DefaultPath, "path to store data in")
+var fData = flag.String("data-dir", cluster.DefaultPath, "path to store data in")
 var fAdvertise = flag.String("advertise", "", "Address to advertise vega on")
 
 func main() {
 	flag.Parse()
 
-	cfg := &vega.ConsulNodeConfig{
+	cfg := &cluster.ConsulNodeConfig{
 		ListenPort:    *fClusterPort,
 		DataPath:      *fData,
 		AdvertiseAddr: *fAdvertise,
 	}
 
-	node, err := vega.NewConsulClusterNode(cfg)
+	node, err := cluster.NewConsulClusterNode(cfg)
 	if err != nil {
 		log.Fatalf("unable to create node: %s", err)
 		os.Exit(1)

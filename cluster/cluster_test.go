@@ -1,4 +1,4 @@
-package vega
+package cluster
 
 import (
 	"io/ioutil"
@@ -9,7 +9,11 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/vektra/vega"
 )
+
+const cPort = "127.0.0.1:34002"
+const cPort2 = "127.0.0.1:34003"
 
 func TestClusterBadPath(t *testing.T) {
 	_, err := NewMemClusterNode("/not/there/i/promise")
@@ -54,7 +58,7 @@ func TestClusterLocalMessages(t *testing.T) {
 		panic(err)
 	}
 
-	payload := Msg([]byte("hello"))
+	payload := vega.Msg([]byte("hello"))
 
 	err = cn.Push("a", payload)
 	if err != nil {
@@ -81,12 +85,12 @@ func TestClusterRoutes(t *testing.T) {
 
 	defer cn.Close()
 
-	memReg := NewMemRegistry()
+	memReg := vega.NewMemRegistry()
 	memReg.Declare("a")
 
 	cn.AddRoute("a", memReg)
 
-	payload := Msg([]byte("hello"))
+	payload := vega.Msg([]byte("hello"))
 
 	cn.Push("a", payload)
 
@@ -110,9 +114,9 @@ func TestClusterLongPoll(t *testing.T) {
 
 	defer cn.Close()
 
-	msg := Msg([]byte("hello"))
+	msg := vega.Msg([]byte("hello"))
 
-	var got *Delivery
+	var got *vega.Delivery
 
 	var wg sync.WaitGroup
 
@@ -161,7 +165,7 @@ func TestClusterRoutesViaNetwork(t *testing.T) {
 
 	// Setup 2 service objects
 
-	s1, err := NewService(cPort, cn)
+	s1, err := vega.NewService(cPort, cn)
 	if err != nil {
 		panic(err)
 	}
@@ -169,7 +173,7 @@ func TestClusterRoutesViaNetwork(t *testing.T) {
 	defer s1.Close()
 	go s1.Accept()
 
-	s2, err := NewService(cPort2, cn2)
+	s2, err := vega.NewService(cPort2, cn2)
 	if err != nil {
 		panic(err)
 	}
@@ -179,7 +183,7 @@ func TestClusterRoutesViaNetwork(t *testing.T) {
 
 	// Wire up a client going to s1
 
-	toS1, err := NewClient(cPort)
+	toS1, err := vega.NewClient(cPort)
 	if err != nil {
 		panic(err)
 	}
@@ -189,19 +193,19 @@ func TestClusterRoutesViaNetwork(t *testing.T) {
 
 	// Push data into cn2 and see it show up in cn
 
-	toS2, err := NewClient(cPort2)
+	toS2, err := vega.NewClient(cPort2)
 	if err != nil {
 		panic(err)
 	}
 
-	msg := Msg([]byte("between nodes"))
+	msg := vega.Msg([]byte("between nodes"))
 
 	err = toS2.Push("a", msg)
 	if err != nil {
 		panic(err)
 	}
 
-	debugf("polling\n")
+	// debugf("polling\n")
 
 	ret, err := toS1.Poll("a")
 	if err != nil {
@@ -231,7 +235,7 @@ func TestClusterAbandon(t *testing.T) {
 		panic(err)
 	}
 
-	payload := Msg([]byte("hello"))
+	payload := vega.Msg([]byte("hello"))
 
 	err = cn.Push("a", payload)
 	if err != nil {
@@ -265,10 +269,10 @@ func TestClusterPubSub(t *testing.T) {
 	err = cn.Declare("a")
 	require.NoError(t, err)
 
-	err = cn.Push(":subscribe", &Message{ReplyTo: "a", CorrelationId: "foo"})
+	err = cn.Push(":subscribe", &vega.Message{ReplyTo: "a", CorrelationId: "foo"})
 	require.NoError(t, err)
 
-	err = cn.Push(":publish", &Message{CorrelationId: "foo", Body: []byte("hello")})
+	err = cn.Push(":publish", &vega.Message{CorrelationId: "foo", Body: []byte("hello")})
 	require.NoError(t, err)
 
 	msg, err := cn.disk.Mailbox("a").Poll()
@@ -307,7 +311,7 @@ func TestClusterPubSubBetweenNodes(t *testing.T) {
 
 	// Setup 2 service objects
 
-	s1, err := NewService(cPort, cn)
+	s1, err := vega.NewService(cPort, cn)
 	if err != nil {
 		panic(err)
 	}
@@ -315,7 +319,7 @@ func TestClusterPubSubBetweenNodes(t *testing.T) {
 	defer s1.Close()
 	go s1.Accept()
 
-	s2, err := NewService(cPort2, cn2)
+	s2, err := vega.NewService(cPort2, cn2)
 	if err != nil {
 		panic(err)
 	}
@@ -325,30 +329,30 @@ func TestClusterPubSubBetweenNodes(t *testing.T) {
 
 	// Wire up a client going to s1
 
-	toS1, err := NewClient(cPort)
+	toS1, err := vega.NewClient(cPort)
 	if err != nil {
 		panic(err)
 	}
 
 	toS1.Declare("a")
-	err = toS1.Push(":subscribe", &Message{ReplyTo: "a", CorrelationId: "foo"})
+	err = toS1.Push(":subscribe", &vega.Message{ReplyTo: "a", CorrelationId: "foo"})
 	require.NoError(t, err)
 
 	cn2.AddRoute(":publish", toS1)
 
 	// Push data into cn2 and see it show up in cn
 
-	toS2, err := NewClient(cPort2)
+	toS2, err := vega.NewClient(cPort2)
 	if err != nil {
 		panic(err)
 	}
 
-	msg := &Message{CorrelationId: "foo", Body: []byte("between nodes")}
+	msg := &vega.Message{CorrelationId: "foo", Body: []byte("between nodes")}
 
 	err = toS2.Push(":publish", msg)
 	require.NoError(t, err)
 
-	debugf("polling\n")
+	// debugf("polling\n")
 
 	ret, err := toS1.Poll("a")
 	if err != nil {

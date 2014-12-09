@@ -1,4 +1,4 @@
-package vega
+package disk
 
 import (
 	"io/ioutil"
@@ -7,6 +7,7 @@ import (
 
 	"github.com/jmhodges/levigo"
 	"github.com/stretchr/testify/assert"
+	"github.com/vektra/vega"
 )
 
 func TestDiskMailboxPush(t *testing.T) {
@@ -26,7 +27,7 @@ func TestDiskMailboxPush(t *testing.T) {
 
 	m := r.Mailbox("a")
 
-	msg := Msg([]byte("hello"))
+	msg := vega.Msg([]byte("hello"))
 
 	m.Push(msg)
 
@@ -51,7 +52,7 @@ func TestDiskMailboxAck(t *testing.T) {
 
 	m := r.Mailbox("a")
 
-	msg := Msg([]byte("hello"))
+	msg := vega.Msg([]byte("hello"))
 
 	m.Push(msg)
 
@@ -90,7 +91,7 @@ func TestDiskMailboxNack(t *testing.T) {
 
 	m := r.Mailbox("a")
 
-	msg := Msg([]byte("hello"))
+	msg := vega.Msg([]byte("hello"))
 
 	m.Push(msg)
 
@@ -126,8 +127,8 @@ func TestDiskMailboxNackPutsAMessageAtTheFront(t *testing.T) {
 
 	m := r.Mailbox("a")
 
-	msg := Msg("hello")
-	msg2 := Msg("2nd message")
+	msg := vega.Msg("hello")
+	msg2 := vega.Msg("2nd message")
 
 	m.Push(msg)
 	m.Push(msg2)
@@ -161,8 +162,8 @@ func TestDiskMailboxDiscontiniousNack(t *testing.T) {
 
 	m := r.Mailbox("a")
 
-	msg := Msg("hello")
-	msg2 := Msg("2nd message")
+	msg := vega.Msg("hello")
+	msg2 := vega.Msg("2nd message")
 
 	m.Push(msg)
 	m.Push(msg2)
@@ -221,7 +222,7 @@ func TestDiskMailboxWatcherGoesInflight(t *testing.T) {
 
 	watch := m.AddWatcher()
 
-	msg := Msg([]byte("hello"))
+	msg := vega.Msg([]byte("hello"))
 
 	m.Push(msg)
 
@@ -259,7 +260,7 @@ func TestDiskMailboxKeepsStatus(t *testing.T) {
 
 	assert.Nil(t, v, "there shouldn't be anything in mailbox")
 
-	msg := Msg([]byte("hello"))
+	msg := vega.Msg([]byte("hello"))
 
 	m.Push(msg)
 
@@ -274,8 +275,8 @@ func TestDiskMailboxKeepsStatus(t *testing.T) {
 		t.Fatal("there shouldn't be anything in the mailbox")
 	}
 
-	msg2 := Msg([]byte("message 2"))
-	msg3 := Msg([]byte("third message"))
+	msg2 := vega.Msg([]byte("message 2"))
+	msg3 := vega.Msg([]byte("third message"))
 
 	m.Push(msg2)
 	m.Push(msg3)
@@ -311,7 +312,7 @@ func TestDiskMailboxStats(t *testing.T) {
 		t.Fatal("there shouldn't be anything in mailbox")
 	}
 
-	msg := Msg([]byte("hello"))
+	msg := vega.Msg([]byte("hello"))
 
 	m.Push(msg)
 
@@ -346,7 +347,7 @@ func TestDiskMailboxWatcher(t *testing.T) {
 
 	watch := m.AddWatcher()
 
-	msg := Msg([]byte("hello"))
+	msg := vega.Msg([]byte("hello"))
 
 	m.Push(msg)
 
@@ -373,7 +374,7 @@ func TestDiskMailboxPersists(t *testing.T) {
 
 	m := r.Mailbox("a")
 
-	msg := Msg([]byte("hello"))
+	msg := vega.Msg([]byte("hello"))
 
 	m.Push(msg)
 
@@ -407,7 +408,7 @@ func TestDiskMailboxAbandon(t *testing.T) {
 
 	m := r.Mailbox("a")
 
-	err = m.Push(Msg([]byte("hello")))
+	err = m.Push(vega.Msg([]byte("hello")))
 	if err != nil {
 		panic(err)
 	}
@@ -479,7 +480,7 @@ func TestDiskMailboxWatcherIsCancelable(t *testing.T) {
 
 	close(done)
 
-	msg := Msg([]byte("hello"))
+	msg := vega.Msg([]byte("hello"))
 
 	m.Push(msg)
 

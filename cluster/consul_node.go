@@ -1,6 +1,10 @@
-package vega
+package cluster
 
-import "fmt"
+import (
+	"fmt"
+
+	"github.com/vektra/vega"
+)
 
 type ConsulClusterNode struct {
 	*clusterNode
@@ -8,7 +12,7 @@ type ConsulClusterNode struct {
 	Config *ConsulNodeConfig
 
 	routes  *consulRoutingTable
-	service *Service
+	service *vega.Service
 }
 
 const DefaultClusterPort = 8476
@@ -23,11 +27,11 @@ type ConsulNodeConfig struct {
 
 func (cn *ConsulNodeConfig) Normalize() error {
 	if cn.ListenPort == 0 {
-		cn.ListenPort = DefaultPort
+		cn.ListenPort = vega.DefaultPort
 	}
 
 	if cn.AdvertiseAddr == "" {
-		ip, err := GetPrivateIP()
+		ip, err := vega.GetPrivateIP()
 		if err != nil {
 			cn.AdvertiseAddr = "127.0.0.1"
 		} else {
@@ -65,12 +69,12 @@ func NewConsulClusterNode(config *ConsulNodeConfig) (*ConsulClusterNode, error) 
 		return nil, err
 	}
 
-	cn, err := NewClusterNode(config.DataPath, NewRouter(ct))
+	cn, err := NewClusterNode(config.DataPath, vega.NewRouter(ct))
 	if err != nil {
 		return nil, err
 	}
 
-	serv, err := NewService(config.ListenAddr(), cn)
+	serv, err := vega.NewService(config.ListenAddr(), cn)
 	if err != nil {
 		cn.Close()
 		return nil, err

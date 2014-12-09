@@ -1,6 +1,9 @@
 package vega
 
-import "errors"
+import (
+	"errors"
+	"strings"
+)
 import "time"
 
 type MailboxStats struct {
@@ -21,6 +24,19 @@ type Mailbox interface {
 	AddWatcher() <-chan *Message
 	AddWatcherCancelable(chan struct{}) <-chan *Message
 	Stats() *MailboxStats
+}
+
+func (id MessageId) LocalIndex() string {
+	colonPos := strings.LastIndex(string(id), ":")
+	if colonPos == -1 {
+		return ""
+	}
+
+	return string(id[colonPos+1:])
+}
+
+func (id MessageId) AppendLocalIndex(idxStr string) MessageId {
+	return id + ":" + MessageId(idxStr)
 }
 
 type Acker func() error

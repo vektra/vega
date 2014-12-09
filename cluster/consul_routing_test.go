@@ -1,8 +1,10 @@
-package vega
+package cluster
 
 import (
 	"testing"
 	"time"
+
+	"github.com/vektra/vega"
 )
 
 func init() {
@@ -10,7 +12,7 @@ func init() {
 }
 
 func TestConsulRoutingTable(t *testing.T) {
-	m1 := NewMemRegistry()
+	m1 := vega.NewMemRegistry()
 
 	ct1, err := NewConsulRoutingTable("127.0.0.1:8899")
 	if err != nil {
@@ -42,7 +44,7 @@ func TestConsulRoutingTable(t *testing.T) {
 }
 
 func TestConsulPusher(t *testing.T) {
-	serv, err := NewMemService(cPort)
+	serv, err := vega.NewMemService(cPort)
 	if err != nil {
 		panic(err)
 	}
@@ -56,7 +58,7 @@ func TestConsulPusher(t *testing.T) {
 
 	cp.Declare("a")
 
-	payload := Msg([]byte("hello"))
+	payload := vega.Msg([]byte("hello"))
 
 	cp.Push("a", payload)
 
@@ -68,8 +70,8 @@ func TestConsulPusher(t *testing.T) {
 }
 
 func TestConsulRoutingTableWithMultipleDeclares(t *testing.T) {
-	m1 := NewMemRegistry()
-	m2 := NewMemRegistry()
+	m1 := vega.NewMemRegistry()
+	m2 := vega.NewMemRegistry()
 
 	ct1, err := NewConsulRoutingTable("127.0.0.1:8899")
 	if err != nil {
@@ -103,17 +105,17 @@ func TestConsulRoutingTableWithMultipleDeclares(t *testing.T) {
 		t.Fatal("couldn't find a")
 	}
 
-	mp, ok := pusher.(*multiPusher)
+	mp, ok := pusher.(*vega.MultiPusher)
 	if !ok {
 		t.Fatal("multiPusher not returned")
 	}
 
-	if len(mp.pushers) != 2 {
+	if len(mp.Pushers) != 2 {
 		t.Fatal("pusher doesn't have 2 servers")
 	}
 
-	cp1 := mp.pushers[0].(*consulPusher)
-	cp2 := mp.pushers[1].(*consulPusher)
+	cp1 := mp.Pushers[0].(*consulPusher)
+	cp2 := mp.Pushers[1].(*consulPusher)
 
 	if cp1.target == "127.0.0.1:8899" {
 		if cp2.target != "127.0.0.1:9900" {
@@ -129,8 +131,8 @@ func TestConsulRoutingTableWithMultipleDeclares(t *testing.T) {
 }
 
 func TestConsulRoutingTableWithMultiPicksUpChanges(t *testing.T) {
-	m1 := NewMemRegistry()
-	m2 := NewMemRegistry()
+	m1 := vega.NewMemRegistry()
+	m2 := vega.NewMemRegistry()
 
 	ct1, err := NewConsulRoutingTable("127.0.0.1:8899")
 	if err != nil {
@@ -180,7 +182,7 @@ func TestConsulRoutingTableWithMultiPicksUpChanges(t *testing.T) {
 
 	defer ct4.Cleanup()
 
-	m3 := NewMemRegistry()
+	m3 := vega.NewMemRegistry()
 
 	ct4.Set("a", m3)
 
@@ -193,19 +195,19 @@ func TestConsulRoutingTableWithMultiPicksUpChanges(t *testing.T) {
 		t.Fatal("cache did not update")
 	}
 
-	mp, ok := p2.(*multiPusher)
+	mp, ok := p2.(*vega.MultiPusher)
 	if !ok {
 		t.Fatal("multiPusher not returned")
 	}
 
-	if len(mp.pushers) != 3 {
+	if len(mp.Pushers) != 3 {
 		t.Fatal("pusher doesn't have 3 servers")
 	}
 }
 
 func TestConsulRoutingTableWithMultiPicksUpRemovals(t *testing.T) {
-	m1 := NewMemRegistry()
-	m2 := NewMemRegistry()
+	m1 := vega.NewMemRegistry()
+	m2 := vega.NewMemRegistry()
 
 	ct1, err := NewConsulRoutingTable("127.0.0.1:8899")
 	if err != nil {
@@ -266,7 +268,7 @@ func TestConsulRoutingTableWithMultiPicksUpRemovals(t *testing.T) {
 }
 
 func TestConsulRoutingTableRemove(t *testing.T) {
-	m1 := NewMemRegistry()
+	m1 := vega.NewMemRegistry()
 
 	ct1, err := NewConsulRoutingTable("127.0.0.1:8899")
 	if err != nil {

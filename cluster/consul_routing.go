@@ -1,4 +1,4 @@
-package vega
+package cluster
 
 import (
 	"bytes"
@@ -8,11 +8,12 @@ import (
 	"sync"
 
 	"github.com/vektra/consul_kv_cache/cache"
+	"github.com/vektra/vega"
 )
 
 type cachedPusher struct {
 	clock  cache.ClockValue
-	pusher Pusher
+	pusher vega.Pusher
 	nodes  int
 }
 
@@ -23,7 +24,7 @@ type consulRoutingTable struct {
 
 	lock sync.RWMutex
 
-	local RouteTable
+	local vega.RouteTable
 
 	consul *cache.ConsulKVCache
 
@@ -47,7 +48,7 @@ func NewConsulRoutingTable(id string) (*consulRoutingTable, error) {
 		selfId:      []byte(id),
 		key:         k,
 		names:       make(map[string]bool),
-		local:       make(MemRouteTable),
+		local:       make(vega.MemRouteTable),
 		consul:      consul,
 		connections: make(map[string]*consulPusher),
 		cache:       make(map[string]*cachedPusher),
@@ -60,7 +61,7 @@ func (ct *consulRoutingTable) Close() {
 	ct.consul.Close()
 }
 
-func (ct *consulRoutingTable) Set(name string, p Pusher) error {
+func (ct *consulRoutingTable) Set(name string, p vega.Pusher) error {
 	err := ct.local.Set(name, p)
 	if err != nil {
 		return err
@@ -87,7 +88,7 @@ func (ct *consulRoutingTable) Remove(name string) error {
 }
 
 type consulPusher struct {
-	client Storage
+	client vega.Storage
 	target string
 }
 
@@ -99,9 +100,9 @@ type consulValue struct {
 	Value       []byte
 }
 
-func (ct *consulRoutingTable) Get(name string) (Pusher, bool) {
+func (ct *consulRoutingTable) Get(name string) (vega.Pusher, bool) {
 	if lp, ok := ct.local.Get(name); ok {
-		debugf("found local pusher for %s: %#v\n", name, lp)
+		// debugf("found local pusher for %s: %#v\n", name, lp)
 		return lp, true
 	}
 
@@ -113,14 +114,14 @@ func (ct *consulRoutingTable) Get(name string) (Pusher, bool) {
 
 	if cp, ok := ct.cache[name]; ok {
 		if cp.clock >= clock {
-			debugf("using cached value to: %d >= %d\n", cp.clock, clock)
+			// debugf("using cached value to: %d >= %d\n", cp.clock, clock)
 			if cp.nodes != len(values) {
-				debugf("ignoring cached multipusher, # values don't matcher")
+				// debugf("ignoring cached multipusher, # values don't matcher")
 			} else {
 				return cp.pusher, true
 			}
 		} else {
-			debugf("ignoring cached value to: %d < %d\n", cp.clock, clock)
+			// debugf("ignoring cached value to: %d < %d\n", cp.clock, clock)
 		}
 	}
 
@@ -146,7 +147,7 @@ func (ct *consulRoutingTable) Get(name string) (Pusher, bool) {
 		return cp, true
 	}
 
-	mp := NewMultiPusher()
+	mp := vega.NewMultiPusher()
 
 	for _, val := range values {
 		id := string(val.Value)
@@ -168,15 +169,15 @@ func (ct *consulRoutingTable) Get(name string) (Pusher, bool) {
 		}
 	}
 
-	if len(mp.pushers) == 1 {
-		sp := mp.pushers[0]
+	if len(mp.Pushers) == 1 {
+		sp := mp.Pushers[0]
 
 		ct.cache[name] = &cachedPusher{clock, sp, 1}
 
 		return sp, true
 	}
 
-	ct.cache[name] = &cachedPusher{clock, mp, len(mp.pushers)}
+	ct.cache[name] = &cachedPusher{clock, mp, len(mp.Pushers)}
 
 	return mp, true
 }
@@ -191,12 +192,12 @@ func (ct *consulRoutingTable) Cleanup() error {
 }
 
 func (cp *consulPusher) Connect() error {
-	c, err := NewClient(cp.target)
+	c, err := vega.NewClient(cp.target)
 	if err != nil {
 		return err
 	}
 
-	cp.client = NewReliableStorage(c)
+	cp.client = vega.NewReliableStorage(c)
 
 	return nil
 }
@@ -212,7 +213,7 @@ func (cp *consulPusher) Declare(name string) error {
 	return cp.client.Declare(name)
 }
 
-func (cp *consulPusher) Push(name string, msg *Message) error {
+func (cp *consulPusher) Push(name string, msg *vega.Message) error {
 	if cp.client == nil {
 		err := cp.Connect()
 		if err != nil {
@@ -223,7 +224,7 @@ func (cp *consulPusher) Push(name string, msg *Message) error {
 	return cp.client.Push(name, msg)
 }
 
-func (cp *consulPusher) Poll(name string) (*Delivery, error) {
+func (cp *consulPusher) Poll(name string) (*vega.Delivery, error) {
 	if cp.client == nil {
 		err := cp.Connect()
 		if err != nil {

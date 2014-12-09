@@ -1,4 +1,4 @@
-package vega
+package cluster
 
 import (
 	"io/ioutil"
@@ -8,6 +8,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/vektra/vega"
 )
 
 func TestConsulNodeConfigDefaults(t *testing.T) {
@@ -17,9 +18,9 @@ func TestConsulNodeConfigDefaults(t *testing.T) {
 		panic(err)
 	}
 
-	assert.Equal(t, cfg.ListenPort, DefaultPort)
+	assert.Equal(t, cfg.ListenPort, vega.DefaultPort)
 
-	ip, err := GetPrivateIP()
+	ip, err := vega.GetPrivateIP()
 	if err != nil {
 		panic(err)
 	}
@@ -74,13 +75,13 @@ func TestConsulNode(t *testing.T) {
 	// propagation delay
 	time.Sleep(1000 * time.Millisecond)
 
-	msg := Msg([]byte("hello"))
+	msg := vega.Msg([]byte("hello"))
 
-	debugf("pushing...\n")
+	// debugf("pushing...\n")
 	err = cn2.Push("a", msg)
 	require.NoError(t, err)
 
-	debugf("polling...\n")
+	// debugf("polling...\n")
 	got, err := cn1.Poll("a")
 	if err != nil {
 		panic(err)
@@ -110,16 +111,16 @@ func TestConsulNodeRedeclaresOnStart(t *testing.T) {
 	// defer cn1.Close()
 	go cn1.Accept()
 
-	cl, err := NewClient(":8899")
+	cl, err := vega.NewClient(":8899")
 
 	cn1.Declare("a")
 
 	// propagation delay
 	time.Sleep(1000 * time.Millisecond)
 
-	msg := Msg([]byte("hello"))
+	msg := vega.Msg([]byte("hello"))
 
-	debugf("pushing...\n")
+	// debugf("pushing...\n")
 	err = cl.Push("a", msg)
 	if err != nil {
 		panic(err)
@@ -142,7 +143,7 @@ func TestConsulNodeRedeclaresOnStart(t *testing.T) {
 	defer cn1.Close()
 	go cn1.Accept()
 
-	cl, _ = NewClient(":8899")
+	cl, _ = vega.NewClient(":8899")
 
 	err = cl.Push("a", msg)
 	assert.NoError(t, err, "routes were not readded")
@@ -191,18 +192,18 @@ func TestConsulNodePubSubBetweenNodes(t *testing.T) {
 
 	cn1.Declare("a")
 
-	err = cn1.Push(":subscribe", &Message{ReplyTo: "a", CorrelationId: "foo"})
+	err = cn1.Push(":subscribe", &vega.Message{ReplyTo: "a", CorrelationId: "foo"})
 	require.NoError(t, err)
 
 	// propagation delay
 	time.Sleep(1000 * time.Millisecond)
 
-	msg := &Message{CorrelationId: "foo", Body: []byte("between nodes")}
+	msg := &vega.Message{CorrelationId: "foo", Body: []byte("between nodes")}
 
 	err = cn2.Push(":publish", msg)
 	require.NoError(t, err)
 
-	debugf("polling\n")
+	// debugf("polling\n")
 
 	ret, err := cn1.Poll("a")
 	if err != nil {
