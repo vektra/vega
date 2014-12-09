@@ -2,9 +2,8 @@ language: go
 
 go:
     - 1.2
-    - tip
+    - 1.3
 
 script:
     - make travis
-
 
