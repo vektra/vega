@@ -24,7 +24,7 @@ agent.
 ### DELETE /message/:id
 * Acknowledge a message previously pulled from a mailbox. This or PUT must be done to all messages in order for Vega to know the message has been handled.
 
-### PUT /messages/:id
+### PUT /message/:id
 * Indicate that the message should be returned to it's mailbox because the component could not handle it.
 
 ## Formats
