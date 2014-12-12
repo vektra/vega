@@ -432,6 +432,58 @@ func TestDiskMailboxAbandon(t *testing.T) {
 	assert.Equal(t, 0, len(data), "mailbox not deleted")
 }
 
+func TestDiskMailboxUpdatesInfoOnAbandon(t *testing.T) {
+	dir, err := ioutil.TempDir("", "mailbox")
+	if err != nil {
+		panic(err)
+	}
+
+	defer os.RemoveAll(dir)
+
+	r, err := NewDiskStorage(dir)
+	if err != nil {
+		panic(err)
+	}
+
+	m := r.Mailbox("a")
+
+	ro := levigo.NewReadOptions()
+
+	data, err := r.db.Get(ro, []byte(":info:"))
+	if err != nil {
+		panic(err)
+	}
+
+	var header infoHeader
+
+	err = diskDataUnmarshal(data, &header)
+	if err != nil {
+		panic(err)
+	}
+
+	_, exists := header.Mailboxes["a"]
+
+	assert.Equal(t, true, exists, "mailbox not setup")
+
+	m.Abandon()
+
+	data, err = r.db.Get(ro, []byte(":info:"))
+	if err != nil {
+		panic(err)
+	}
+
+	header = infoHeader{}
+
+	err = diskDataUnmarshal(data, &header)
+	if err != nil {
+		panic(err)
+	}
+
+	_, exists = header.Mailboxes["a"]
+
+	assert.Equal(t, false, exists, "mailbox not deleted")
+}
+
 func TestDiskMailboxInformsWatchersOnAbandon(t *testing.T) {
 	dir, err := ioutil.TempDir("", "mailbox")
 	if err != nil {
