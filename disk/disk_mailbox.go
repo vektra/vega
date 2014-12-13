@@ -54,7 +54,7 @@ type diskMailbox struct {
 }
 
 type infoHeader struct {
-	Mailboxes []string
+	Mailboxes map[string]struct{}
 }
 
 func diskDataMarshal(v interface{}) ([]byte, error) {
@@ -91,7 +91,13 @@ func (d *Storage) Mailbox(name string) vega.Mailbox {
 		}
 	}
 
-	header.Mailboxes = append(header.Mailboxes, name)
+	if header.Mailboxes == nil {
+		header.Mailboxes = map[string]struct{}{
+			(name): struct{}{},
+		}
+	} else {
+		header.Mailboxes[name] = struct{}{}
+	}
 
 	wo := levigo.NewWriteOptions()
 
@@ -138,7 +144,11 @@ func (d *Storage) MailboxNames() []string {
 		}
 	}
 
-	return header.Mailboxes
+	mailboxes := make([]string, 0, len(header.Mailboxes))
+	for name := range header.Mailboxes {
+		mailboxes = append(mailboxes, name)
+	}
+	return mailboxes
 }
 
 type mailboxHeader struct {
@@ -165,26 +175,53 @@ func (m *diskMailbox) Abandon() error {
 		return err
 	}
 
-	if len(data) == 0 {
-		return nil
+	batch := levigo.NewWriteBatch()
+
+	if len(data) > 0 {
+		var header mailboxHeader
+
+		err = diskDataUnmarshal(data, &header)
+		if err != nil {
+			return err
+		}
+
+		for i := header.AckIndex; i < header.ReadIndex+header.Size; i++ {
+			key := append(m.prefix, []byte(strconv.Itoa(i))...)
+
+			batch.Delete(key)
+		}
 	}
 
-	var header mailboxHeader
+	if data != nil {
+		batch.Delete(m.prefix)
+	}
 
-	err = diskDataUnmarshal(data, &header)
+	key := []byte(":info:")
+
+	data, err = db.Get(ro, key)
 	if err != nil {
 		return err
 	}
 
-	batch := levigo.NewWriteBatch()
+	if len(data) > 0 {
+		var header infoHeader
 
-	for i := header.AckIndex; i < header.ReadIndex+header.Size; i++ {
-		key := append(m.prefix, []byte(strconv.Itoa(i))...)
+		err = diskDataUnmarshal(data, &header)
+		if err != nil {
+			return err
+		}
 
-		batch.Delete(key)
+		if header.Mailboxes != nil {
+			delete(header.Mailboxes, string(m.prefix))
+
+			data, err = diskDataMarshal(&header)
+			if err != nil {
+				return err
+			}
+
+			batch.Put(key, data)
+		}
 	}
-
-	batch.Delete(m.prefix)
 
 	wo := levigo.NewWriteOptions()
 	wo.SetSync(true)
