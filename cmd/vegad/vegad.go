@@ -40,7 +40,7 @@ func main() {
 	if *fHttpPort != 0 {
 		h = vega.NewHTTPService(
 			fmt.Sprintf("127.0.0.1:%d", *fHttpPort),
-			node.Registry())
+			node)
 
 		err = h.Listen()
 		if err != nil {

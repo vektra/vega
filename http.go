@@ -24,7 +24,7 @@ type inflightDelivery struct {
 
 type HTTPService struct {
 	Address  string
-	Registry *Registry
+	Registry Storage
 
 	listener net.Listener
 	server   *http.Server
@@ -40,7 +40,7 @@ type HTTPService struct {
 	done chan struct{}
 }
 
-func NewHTTPService(port string, reg *Registry) *HTTPService {
+func NewHTTPService(port string, reg Storage) *HTTPService {
 	h := &HTTPService{
 		Address:      port,
 		Registry:     reg,
