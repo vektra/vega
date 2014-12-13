@@ -23,6 +23,8 @@ type ConsulNodeConfig struct {
 	AdvertiseAddr string
 	ListenPort    int
 	DataPath      string
+	ConsulToken   string
+	RoutingPrefix string
 }
 
 func (cn *ConsulNodeConfig) Normalize() error {
@@ -41,6 +43,10 @@ func (cn *ConsulNodeConfig) Normalize() error {
 
 	if cn.DataPath == "" {
 		cn.DataPath = DefaultPath
+	}
+
+	if cn.RoutingPrefix == "" {
+		cn.RoutingPrefix = DefaultRoutingPrefix
 	}
 
 	return nil
@@ -64,7 +70,9 @@ func NewConsulClusterNode(config *ConsulNodeConfig) (*ConsulClusterNode, error) 
 		return nil, err
 	}
 
-	ct, err := NewConsulRoutingTable(config.AdvertiseID())
+	consul := NewConsulClient(config.ConsulToken)
+
+	ct, err := NewConsulRoutingTable(config.RoutingPrefix, config.AdvertiseID(), consul)
 	if err != nil {
 		return nil, err
 	}
