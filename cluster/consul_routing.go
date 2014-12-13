@@ -7,6 +7,7 @@ import (
 
 	"sync"
 
+	"github.com/armon/consul-api"
 	"github.com/vektra/consul_kv_cache/cache"
 	"github.com/vektra/vega"
 )
@@ -33,14 +34,14 @@ type consulRoutingTable struct {
 	cache map[string]*cachedPusher
 }
 
-var ConsulRoutingPrefix = "mailbox-routing"
+var DefaultRoutingPrefix = "mailbox-routing"
 
-func NewConsulRoutingTable(id string) (*consulRoutingTable, error) {
+func NewConsulRoutingTable(prefix, id string, client *consulapi.Client) (*consulRoutingTable, error) {
 	h := sha1.New()
 	h.Write([]byte(id))
 	k := hex.EncodeToString(h.Sum(nil))
 
-	consul := cache.NewConsulKVCache(ConsulRoutingPrefix)
+	consul := cache.NewCustomConsulKVCache(prefix, client)
 
 	go consul.BackgroundUpdate()
 

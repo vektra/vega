@@ -15,7 +15,9 @@ var fPort = flag.Int("port", vega.DefaultPort, "port to listen on localhost")
 var fClusterPort = flag.Int("cluster-port", cluster.DefaultClusterPort, "port to listen on for cluster membership")
 var fHttpPort = flag.Int("http-port", vega.DefaultHTTPPort, "port to listen on")
 var fData = flag.String("data-dir", cluster.DefaultPath, "path to store data in")
-var fAdvertise = flag.String("advertise", "", "Address to advertise vega on")
+var fAdvertise = flag.String("advertise", "", "address to advertise vega on")
+var fRoutingPrefix = flag.String("routing-prefix", cluster.DefaultRoutingPrefix, "prefix to store the routing table under")
+var fToken = flag.String("consul-token", "", "consul acl token to use")
 
 func main() {
 	flag.Parse()
@@ -24,6 +26,8 @@ func main() {
 		ListenPort:    *fClusterPort,
 		DataPath:      *fData,
 		AdvertiseAddr: *fAdvertise,
+		RoutingPrefix: *fRoutingPrefix,
+		ConsulToken:   *fToken,
 	}
 
 	node, err := cluster.NewConsulClusterNode(cfg)
