@@ -7,21 +7,19 @@ import (
 	"github.com/vektra/vega"
 )
 
-func init() {
-	ConsulRoutingPrefix = "test-mailbox-routing"
-}
+const testRoutingPrefix = "test-mailbox-routing"
 
 func TestConsulRoutingTable(t *testing.T) {
 	m1 := vega.NewMemRegistry()
 
-	ct1, err := NewConsulRoutingTable("127.0.0.1:8899")
+	ct1, err := NewConsulRoutingTable(testRoutingPrefix, "127.0.0.1:8899", nil)
 	if err != nil {
 		panic(err)
 	}
 
 	defer ct1.Cleanup()
 
-	ct2, err := NewConsulRoutingTable("127.0.0.1:9900")
+	ct2, err := NewConsulRoutingTable(testRoutingPrefix, "127.0.0.1:9900", nil)
 	if err != nil {
 		panic(err)
 	}
@@ -73,21 +71,21 @@ func TestConsulRoutingTableWithMultipleDeclares(t *testing.T) {
 	m1 := vega.NewMemRegistry()
 	m2 := vega.NewMemRegistry()
 
-	ct1, err := NewConsulRoutingTable("127.0.0.1:8899")
+	ct1, err := NewConsulRoutingTable(testRoutingPrefix, "127.0.0.1:8899", nil)
 	if err != nil {
 		panic(err)
 	}
 
 	defer ct1.Cleanup()
 
-	ct2, err := NewConsulRoutingTable("127.0.0.1:9900")
+	ct2, err := NewConsulRoutingTable(testRoutingPrefix, "127.0.0.1:9900", nil)
 	if err != nil {
 		panic(err)
 	}
 
 	defer ct2.Cleanup()
 
-	ct3, err := NewConsulRoutingTable("127.0.0.1:9911")
+	ct3, err := NewConsulRoutingTable(testRoutingPrefix, "127.0.0.1:9911", nil)
 	if err != nil {
 		panic(err)
 	}
@@ -134,21 +132,21 @@ func TestConsulRoutingTableWithMultiPicksUpChanges(t *testing.T) {
 	m1 := vega.NewMemRegistry()
 	m2 := vega.NewMemRegistry()
 
-	ct1, err := NewConsulRoutingTable("127.0.0.1:8899")
+	ct1, err := NewConsulRoutingTable(testRoutingPrefix, "127.0.0.1:8899", nil)
 	if err != nil {
 		panic(err)
 	}
 
 	defer ct1.Cleanup()
 
-	ct2, err := NewConsulRoutingTable("127.0.0.1:9900")
+	ct2, err := NewConsulRoutingTable(testRoutingPrefix, "127.0.0.1:9900", nil)
 	if err != nil {
 		panic(err)
 	}
 
 	defer ct2.Cleanup()
 
-	ct3, err := NewConsulRoutingTable("127.0.0.1:9911")
+	ct3, err := NewConsulRoutingTable(testRoutingPrefix, "127.0.0.1:9911", nil)
 	if err != nil {
 		panic(err)
 	}
@@ -175,7 +173,7 @@ func TestConsulRoutingTableWithMultiPicksUpChanges(t *testing.T) {
 		t.Fatal("pusher caching not working")
 	}
 
-	ct4, err := NewConsulRoutingTable("127.0.0.1:9922")
+	ct4, err := NewConsulRoutingTable(testRoutingPrefix, "127.0.0.1:9922", nil)
 	if err != nil {
 		panic(err)
 	}
@@ -209,21 +207,21 @@ func TestConsulRoutingTableWithMultiPicksUpRemovals(t *testing.T) {
 	m1 := vega.NewMemRegistry()
 	m2 := vega.NewMemRegistry()
 
-	ct1, err := NewConsulRoutingTable("127.0.0.1:8899")
+	ct1, err := NewConsulRoutingTable(testRoutingPrefix, "127.0.0.1:8899", nil)
 	if err != nil {
 		panic(err)
 	}
 
 	defer ct1.Cleanup()
 
-	ct2, err := NewConsulRoutingTable("127.0.0.1:9900")
+	ct2, err := NewConsulRoutingTable(testRoutingPrefix, "127.0.0.1:9900", nil)
 	if err != nil {
 		panic(err)
 	}
 
 	defer ct2.Cleanup()
 
-	ct3, err := NewConsulRoutingTable("127.0.0.1:9911")
+	ct3, err := NewConsulRoutingTable(testRoutingPrefix, "127.0.0.1:9911", nil)
 	if err != nil {
 		panic(err)
 	}
@@ -270,14 +268,14 @@ func TestConsulRoutingTableWithMultiPicksUpRemovals(t *testing.T) {
 func TestConsulRoutingTableRemove(t *testing.T) {
 	m1 := vega.NewMemRegistry()
 
-	ct1, err := NewConsulRoutingTable("127.0.0.1:8899")
+	ct1, err := NewConsulRoutingTable(testRoutingPrefix, "127.0.0.1:8899", nil)
 	if err != nil {
 		panic(err)
 	}
 
 	defer ct1.Cleanup()
 
-	ct2, err := NewConsulRoutingTable("127.0.0.1:9900")
+	ct2, err := NewConsulRoutingTable(testRoutingPrefix, "127.0.0.1:9900", nil)
 	if err != nil {
 		panic(err)
 	}
