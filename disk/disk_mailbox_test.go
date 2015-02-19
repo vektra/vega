@@ -5,8 +5,9 @@ import (
 	"os"
 	"testing"
 
-	"github.com/jmhodges/levigo"
+	"github.com/boltdb/bolt"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"github.com/vektra/vega"
 )
 
@@ -29,9 +30,12 @@ func TestDiskMailboxPush(t *testing.T) {
 
 	msg := vega.Msg([]byte("hello"))
 
-	m.Push(msg)
+	err = m.Push(msg)
+	require.NoError(t, err)
 
-	out, _ := m.Poll()
+	out, err := m.Poll()
+	require.NoError(t, err)
+
 	assert.True(t, out.Equal(msg), "wrong value")
 }
 
@@ -54,9 +58,12 @@ func TestDiskMailboxAck(t *testing.T) {
 
 	msg := vega.Msg([]byte("hello"))
 
-	m.Push(msg)
+	err = m.Push(msg)
+	require.NoError(t, err)
 
-	out, _ := m.Poll()
+	out, err := m.Poll()
+	require.NoError(t, err)
+
 	assert.True(t, out.Equal(msg), "wrong value")
 
 	stats := m.Stats()
@@ -93,12 +100,15 @@ func TestDiskMailboxNack(t *testing.T) {
 
 	msg := vega.Msg([]byte("hello"))
 
-	m.Push(msg)
+	err = m.Push(msg)
+	require.NoError(t, err)
 
-	out, _ := m.Poll()
+	out, err := m.Poll()
+	require.NoError(t, err)
 	assert.True(t, out.Equal(msg), "wrong value")
 
-	out2, _ := m.Poll()
+	out2, err := m.Poll()
+	require.NoError(t, err)
 	assert.Nil(t, out2, "where did this message come from?")
 
 	err = m.Nack(out.MessageId)
@@ -413,23 +423,22 @@ func TestDiskMailboxAbandon(t *testing.T) {
 		panic(err)
 	}
 
-	ro := levigo.NewReadOptions()
+	var data []byte
 
-	data, err := r.db.Get(ro, []byte("a0"))
-	if err != nil {
-		panic(err)
-	}
+	r.db.View(func(tx *bolt.Tx) error {
+		data = tx.Bucket([]byte("a")).Get([]byte("m-0"))
+		return nil
+	})
 
 	assert.NotEqual(t, 0, len(data), "mailbox not setup")
 
 	m.Abandon()
 
-	data, err = r.db.Get(ro, []byte("a0"))
-	if err != nil {
-		panic(err)
-	}
-
-	assert.Equal(t, 0, len(data), "mailbox not deleted")
+	r.db.View(func(tx *bolt.Tx) error {
+		buk := tx.Bucket([]byte("a"))
+		assert.Nil(t, buk)
+		return nil
+	})
 }
 
 func TestDiskMailboxUpdatesInfoOnAbandon(t *testing.T) {
@@ -447,12 +456,12 @@ func TestDiskMailboxUpdatesInfoOnAbandon(t *testing.T) {
 
 	m := r.Mailbox("a")
 
-	ro := levigo.NewReadOptions()
+	var data []byte
 
-	data, err := r.db.Get(ro, []byte(":info:"))
-	if err != nil {
-		panic(err)
-	}
+	r.db.View(func(tx *bolt.Tx) error {
+		data = tx.Bucket([]byte(":system:")).Get([]byte(":info:"))
+		return nil
+	})
 
 	var header infoHeader
 
@@ -465,12 +474,13 @@ func TestDiskMailboxUpdatesInfoOnAbandon(t *testing.T) {
 
 	assert.Equal(t, true, exists, "mailbox not setup")
 
-	m.Abandon()
+	err = m.Abandon()
+	require.NoError(t, err)
 
-	data, err = r.db.Get(ro, []byte(":info:"))
-	if err != nil {
-		panic(err)
-	}
+	r.db.View(func(tx *bolt.Tx) error {
+		data = tx.Bucket([]byte(":system:")).Get([]byte(":info:"))
+		return nil
+	})
 
 	header = infoHeader{}
 
