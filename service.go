@@ -34,6 +34,14 @@ type Service struct {
 	lock     sync.Mutex
 }
 
+func (s *Service) Port() int {
+	if addr, ok := s.listener.Addr().(*net.TCPAddr); ok {
+		return addr.Port
+	}
+
+	return 0
+}
+
 func NewService(addr string, reg Storage) (*Service, error) {
 	l, err := net.Listen("tcp", addr)
 
