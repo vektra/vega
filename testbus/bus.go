@@ -37,7 +37,7 @@ func (tb *TestBus) Client() *vega.FeatureClient {
 		panic(err)
 	}
 
-	return &FeatureClient{
+	return &vega.FeatureClient{
 		Client: client,
 	}
 }
