@@ -5,7 +5,7 @@ Vega
 
 A distributed mailbox system for building distributed systems.
 
-* Version: **0.3**
+* Version: **0.4**
 * [Announcement blog post](http://vektra.com/blog/vega)
 
 # Features
@@ -24,6 +24,10 @@ A distributed mailbox system for building distributed systems.
 
 * AMQP API support
 * STOMP API support
+
+# Requirements
+
+* Consul 0.5.0 or greater
 
 # Installation
 
