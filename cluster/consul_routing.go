@@ -4,19 +4,15 @@ import (
 	"bytes"
 	"crypto/sha1"
 	"encoding/hex"
+	"fmt"
+	"time"
 
+	"strings"
 	"sync"
 
 	"github.com/armon/consul-api"
-	"github.com/vektra/consul_kv_cache/cache"
 	"github.com/vektra/vega"
 )
-
-type cachedPusher struct {
-	clock  cache.ClockValue
-	pusher vega.Pusher
-	nodes  int
-}
 
 type consulRoutingTable struct {
 	selfId []byte
@@ -27,11 +23,45 @@ type consulRoutingTable struct {
 
 	local vega.RouteTable
 
-	consul *cache.ConsulKVCache
+	consul *consulapi.Client
+
+	prefix string
+	kv     *consulapi.KV
+	done   bool
 
 	connections map[string]*consulPusher
 
-	cache map[string]*cachedPusher
+	tableLock sync.RWMutex
+	table     map[string]*hybridPusher
+}
+
+type hybridPusher struct {
+	local  vega.Pusher
+	remote []*consulPusher
+}
+
+func (h *hybridPusher) Push(who string, msg *vega.Message) error {
+	if h.local != nil {
+		if err := h.local.Push(who, msg); err != nil {
+			return err
+		}
+	}
+
+	for _, r := range h.remote {
+		if err := r.Push(who, msg); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func (h *hybridPusher) Count() int {
+	if h.local != nil {
+		return len(h.remote) + 1
+	} else {
+		return len(h.remote)
+	}
 }
 
 var DefaultRoutingPrefix = "mailbox-routing"
@@ -41,36 +71,131 @@ func NewConsulRoutingTable(prefix, id string, client *consulapi.Client) (*consul
 	h.Write([]byte(id))
 	k := hex.EncodeToString(h.Sum(nil))
 
-	consul := cache.NewCustomConsulKVCache(prefix, client)
-
-	go consul.BackgroundUpdate()
-
 	ct := &consulRoutingTable{
 		selfId:      []byte(id),
 		key:         k,
 		names:       make(map[string]bool),
 		local:       make(vega.MemRouteTable),
-		consul:      consul,
 		connections: make(map[string]*consulPusher),
-		cache:       make(map[string]*cachedPusher),
+
+		consul: client,
+		kv:     client.KV(),
+
+		table: make(map[string]*hybridPusher),
 	}
+
+	go ct.updateBackground()
 
 	return ct, nil
 }
 
+func (ct *consulRoutingTable) extractName(val *consulapi.KVPair) (string, string) {
+	start := len(ct.prefix)
+
+	slashIndex := strings.Index(val.Key[start:], "/")
+
+	return val.Key[start:slashIndex], val.Key[slashIndex+1:]
+}
+
+func (ct *consulRoutingTable) updateBackground() {
+	qo := &consulapi.QueryOptions{WaitIndex: 0, WaitTime: 1 * time.Minute}
+
+	for {
+		if ct.done {
+			return
+		}
+
+		values, qm, err := ct.kv.List(ct.prefix, qo)
+		if err != nil {
+			time.Sleep(1 * time.Second)
+			continue
+		}
+
+		// We're seeing the same state as we last saw, so skip it.
+		if qo.WaitIndex == qm.LastIndex {
+			continue
+		}
+
+		// fmt.Printf("updating at %d: %d values\n", qo.WaitIndex, len(values))
+
+		qo.WaitIndex = qm.LastIndex
+
+		ct.tableLock.Lock()
+
+		// Clear out the existing remotes because we're going to repopulate
+		// them now.
+		for _, ent := range ct.table {
+			ent.remote = nil
+		}
+
+		for _, val := range values {
+			name, id := ct.extractName(val)
+
+			if bytes.Equal(val.Value, ct.selfId) {
+				continue
+			}
+
+			// fmt.Printf(" => %v, %v (%v)\n", name, id, string(val.Value))
+
+			ent, ok := ct.table[name]
+			if !ok {
+				ent = &hybridPusher{}
+				ct.table[name] = ent
+			}
+
+			ent.remote = append(ent.remote, ct.connectionTo(id, string(val.Value)))
+		}
+
+		var toRemove []string
+
+		for key, ent := range ct.table {
+			if ent.local == nil && len(ent.remote) == 0 {
+				toRemove = append(toRemove, key)
+			}
+		}
+
+		for _, key := range toRemove {
+			delete(ct.table, key)
+		}
+
+		ct.tableLock.Unlock()
+	}
+}
+
 func (ct *consulRoutingTable) Close() {
-	ct.consul.Close()
+	ct.done = true
 }
 
 func (ct *consulRoutingTable) Set(name string, p vega.Pusher) error {
+	ct.tableLock.Lock()
+	defer ct.tableLock.Unlock()
+
 	err := ct.local.Set(name, p)
 	if err != nil {
 		return err
 	}
 
-	key := name + "/" + ct.key
+	ent, ok := ct.table[name]
+	if !ok {
+		ent = &hybridPusher{}
+		ct.table[name] = ent
+	}
 
-	err = ct.consul.Set(key, ct.selfId)
+	lp, ok := ct.local.Get(name)
+	if !ok {
+		return fmt.Errorf("local registery is corrupted")
+	}
+
+	ent.local = lp
+
+	key := ct.prefix + name + "/" + ct.key
+
+	pair := &consulapi.KVPair{
+		Key:   key,
+		Value: ct.selfId,
+	}
+
+	_, err = ct.kv.Put(pair, &consulapi.WriteOptions{})
 	if err != nil {
 		return err
 	}
@@ -84,8 +209,22 @@ func (ct *consulRoutingTable) Remove(name string) error {
 
 	key := name + "/" + ct.key
 
-	ct.consul.Delete(key)
+	ct.kv.Delete(key, nil)
 	return ct.local.Remove(name)
+}
+
+func (ct *consulRoutingTable) connectionTo(id, target string) *consulPusher {
+	if cp, ok := ct.connections[id]; ok {
+		return cp
+	}
+
+	cp := &consulPusher{nil, target}
+
+	ct.connections[id] = cp
+
+	cp.Connect()
+
+	return cp
 }
 
 type consulPusher struct {
@@ -93,100 +232,20 @@ type consulPusher struct {
 	target string
 }
 
-type consulValue struct {
-	CreateIndex int
-	ModifyIndex int
-	Key         string
-	Flags       int
-	Value       []byte
-}
-
 func (ct *consulRoutingTable) Get(name string) (vega.Pusher, bool) {
-	if lp, ok := ct.local.Get(name); ok {
-		// debugf("found local pusher for %s: %#v\n", name, lp)
-		return lp, true
-	}
+	ct.tableLock.RLock()
 
-	values, clock := ct.consul.GetPrefix(name)
+	pusher, ok := ct.table[name]
 
-	if len(values) == 0 {
-		return nil, false
-	}
+	ct.tableLock.RUnlock()
 
-	if cp, ok := ct.cache[name]; ok {
-		if cp.clock >= clock {
-			// debugf("using cached value to: %d >= %d\n", cp.clock, clock)
-			if cp.nodes != len(values) {
-				// debugf("ignoring cached multipusher, # values don't matcher")
-			} else {
-				return cp.pusher, true
-			}
-		} else {
-			// debugf("ignoring cached value to: %d < %d\n", cp.clock, clock)
-		}
-	}
-
-	if len(values) == 1 {
-		if bytes.Equal(values[0].Value, ct.selfId) {
-			return nil, false
-		}
-
-		id := string(values[0].Value)
-
-		if cp, ok := ct.connections[id]; ok {
-			return cp, true
-		}
-
-		cp := &consulPusher{nil, string(values[0].Value)}
-
-		ct.connections[id] = cp
-
-		cp.Connect()
-
-		ct.cache[name] = &cachedPusher{clock, cp, 1}
-
-		return cp, true
-	}
-
-	mp := vega.NewMultiPusher()
-
-	for _, val := range values {
-		id := string(val.Value)
-
-		if bytes.Equal(val.Value, ct.selfId) {
-			continue
-		}
-
-		if cp, ok := ct.connections[id]; ok {
-			mp.Add(cp)
-		} else {
-			cp := &consulPusher{nil, id}
-
-			ct.connections[id] = cp
-
-			cp.Connect()
-
-			mp.Add(cp)
-		}
-	}
-
-	if len(mp.Pushers) == 1 {
-		sp := mp.Pushers[0]
-
-		ct.cache[name] = &cachedPusher{clock, sp, 1}
-
-		return sp, true
-	}
-
-	ct.cache[name] = &cachedPusher{clock, mp, len(mp.Pushers)}
-
-	return mp, true
+	return pusher, ok
 }
 
 func (ct *consulRoutingTable) Cleanup() error {
 	for name, _ := range ct.names {
-		key := name + "/" + ct.key
-		ct.consul.Delete(key)
+		key := ct.prefix + name + "/" + ct.key
+		ct.kv.Delete(key, nil)
 	}
 
 	return nil
