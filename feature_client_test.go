@@ -827,7 +827,6 @@ func TestFeatureClientPipeSendBulkEncrypted(t *testing.T) {
 	n, err = conn.bulk.(*streamWrapper).Conn.Read(d2)
 	assert.Equal(t, 4, n)
 	assert.NotEqual(t, []byte("ello"), d2)
-	assert.NotEqual(t, d2[1], d2[2])
 
 	wg.Wait()
 }
